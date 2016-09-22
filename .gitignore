@@ -1,0 +1,7 @@
+*.o
+*.gcda
+*.gcno
+libshdata-test
+.cproject
+.project
+.settings/

@@ -1,0 +1,17 @@
+libshdata
+
+Lock free shared-memory library
+
+The use-case handled by this library is that of one producer and several
+consumers, that periodically exchange data that varies with time (e.g. the
+acceleration on the 3 axis seen by an IMU sensor) ; therefore all the data
+that is shared using this library has to be time-stamped.
+Consumers can search for data produced right after/right before/close to a
+given date, or for the latest data, and can retrieve that data and its
+associated timestamps, one by one or in batch. It can also retrieve bits of that
+data, called "quantities".
+The producer, on its side, defines the data format and decides how far in data
+history the consumers are allowed to go (which basically setups the length of
+the ring-buffer used for communication).
+All write & read operations are lock-free.
+See libshdata.h & examples directory for more information
