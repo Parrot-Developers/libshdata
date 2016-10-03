@@ -147,8 +147,9 @@ int shd_hdr_read(const struct shd_section_id *id, void *hdr_start,
 		 * common.
 		 */
 		if (lib_version_maj != SHD_VERSION_MAJOR) {
-			ULOGE("Shared memory section was not created with the "
-					"same library version");
+			ULOGE("Trying to read a section created with another "
+				"version of the library : update your "
+				"software !");
 			ret = -EFAULT;
 			goto exit;
 		}

@@ -34,9 +34,7 @@
 
 #include <stdint.h>
 
-/* Alignment is forced to 8 bytes instead of sizeof(void *) to keep a constant
- * layout whether the library is compiled in 32 or 64 bits */
-#define ALIGN_UP(x)		ALIGN(x, 8)
+#define ALIGN_UP(x)		ALIGN(x, 4)
 #define ALIGN(x, a)		__ALIGN_MASK(x, (__typeof__(x))(a)-1)
 #define __ALIGN_MASK(x, mask)	(((x)+(mask))&~(mask))
 
