@@ -63,6 +63,15 @@ shd_data_get_sample_ptr(const struct shd_data_section_desc *desc,
 				int index);
 
 /*
+ * @brief Clear a given memory section (setting it all to zero)
+ *
+ * @param[in] id : id of the section to clear
+ *
+ * @return : 0 in case of success
+ */
+int shd_data_clear_section(const struct shd_data_section_desc *desc);
+
+/*
  * @brief Reserve write in a new data slot
  *
  * @param[in,out] ctx : current shared memory context

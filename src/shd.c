@@ -129,6 +129,7 @@ struct shd_ctx *shd_create(const char *blob_name, const char *shd_root,
 	shd_mdata_hdr_write(ctx->sect_mmap->metadata_blob_top,
 				blob_metadata_hdr,
 				hdr_info->blob_metadata_hdr_size);
+	shd_data_clear_section(ctx->desc);
 
 	rev_nb = shd_sync_update_global_revision_nb(ctx->sync_ctx,
 						ctx->sect_mmap->sync_top);

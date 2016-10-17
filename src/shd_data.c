@@ -57,6 +57,15 @@ shd_data_get_sample_ptr(const struct shd_data_section_desc *desc,
 			+ index * shd_sample_get_size(desc->blob_size));
 }
 
+int shd_data_clear_section(const struct shd_data_section_desc *desc)
+{
+	memset(desc->data_section_start,
+		0,
+		shd_data_get_total_size(desc->blob_size, desc->nb_samples));
+
+	return 0;
+}
+
 int shd_data_reserve_write(struct shd_ctx *ctx)
 {
 	int ret;
