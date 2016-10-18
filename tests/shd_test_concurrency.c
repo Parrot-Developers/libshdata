@@ -506,7 +506,7 @@ static void *overwrite_producer_thread(void *args)
 	 * next "write" */
 	shd_concurrency_set_hook_strategy(HOOK_SAMPLE_WRITE_START,
 						SECOND_THREAD_WAITS_FIRST_THREAD_FIRST_ACTION);
-	shd_concurrency_set_hook_strategy(HOOK_SAMPLE_WRITE_BEFORE_COMMIT,
+	shd_concurrency_set_hook_strategy(HOOK_SAMPLE_WRITE_AFTER_COMMIT,
 						SECOND_THREAD_SIGNALS_SECOND_ACTION);
 
 	/* ... and let the consumer advance */
@@ -560,15 +560,6 @@ static void *overwrite_consumer_thread(void *args)
 			CU_FAIL_FATAL("Could not get time");
 
 	ret = shd_read_from_sample(ctx, 0, &search, NULL, blob_samp);
-	CU_ASSERT_TRUE_FATAL(ret > 0);
-	CU_ASSERT_TRUE_FATAL(time_is_equal(&blob_samp[0].meta.ts,
-					&sample_meta.ts));
-	CU_ASSERT_TRUE_FATAL(time_is_equal(&blob_samp[0].meta.exp,
-					&sample_meta.exp));
-
-	/* ... so, we read unconsistent data, but "end_read" should detect that
-	 * the sample was overwritten, and return an error */
-	ret = shd_end_read(ctx, rev);
 
 	return (void*) ret;
 }
@@ -587,9 +578,9 @@ static void test_concurrency_overwrite_sample_just_after_search(void)
 	 * and the internal read of the sample number, and during this period
 	 * the producer thread will overwrite the sample that was the result
 	 * of the search */
-	shd_concurrency_set_hook_strategy(HOOK_DATA_FIND_SEARCH_OVER,
+	shd_concurrency_set_hook_strategy(HOOK_WINDOW_SEARCH_START,
 						FIRST_THREAD_SIGNALS_FIRST_ACTION);
-	shd_concurrency_set_hook_strategy(HOOK_DATA_FIND_BEFORE_SAMPLE_INDEX_READ,
+	shd_concurrency_set_hook_strategy(HOOK_WINDOW_SEARCH_OVER,
 						FIRST_THREAD_WAITS_SECOND_THREAD_SECOND_ACTION);
 
 	prod_has_written_whole_section = 0;
@@ -608,7 +599,7 @@ static void test_concurrency_overwrite_sample_just_after_search(void)
 	/* The producer should always complete its write */
 	CU_ASSERT_EQUAL(prod_ret, 0);
 	/* The consumer should detect that an overwrite has occurred */
-	CU_ASSERT_EQUAL(cons_ret, -EAGAIN);
+	CU_ASSERT_EQUAL(cons_ret, -EFAULT);
 
 	shd_concurrency_clean_hooks();
 }

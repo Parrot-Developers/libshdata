@@ -78,7 +78,8 @@ int shd_window_read(struct shd_window *window,
  * @param[in] t_index : index of most recently produced sample
  *
  * @return number of matching samples in case of success,
- *         -errno in case of error
+ *         -EINVAL in case of invalid parameter
+ *         -ENOENT if no result was found
  */
 int shd_window_set(struct shd_window *window,
 			const struct shd_sample_search *search,

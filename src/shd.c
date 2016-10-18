@@ -298,11 +298,11 @@ int shd_write_new_blob(struct shd_ctx *ctx,
 	if (ctx == NULL || src == NULL || metadata == NULL)
 		return -EINVAL;
 
+	SHD_HOOK(HOOK_SAMPLE_WRITE_START);
+
 	ret = shd_new_sample(ctx, metadata);
 	if (ret < 0)
 		return ret;
-
-	SHD_HOOK(HOOK_SAMPLE_WRITE_START);
 
 	ret = shd_write_quantity(ctx, &fake_quantity, src);
 	if (ret < 0)
@@ -313,6 +313,8 @@ int shd_write_new_blob(struct shd_ctx *ctx,
 	ret = shd_commit_sample(ctx);
 	if (ret < 0)
 		return ret;
+
+	SHD_HOOK(HOOK_SAMPLE_WRITE_AFTER_COMMIT);
 
 	return 0;
 }

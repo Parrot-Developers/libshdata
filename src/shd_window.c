@@ -286,10 +286,14 @@ int shd_window_set(struct shd_window *window,
 	int ref_idx = -1;
 	int ret = -1;
 
+	SHD_HOOK(HOOK_WINDOW_SEARCH_START);
+
 	ULOGD("Setting reading window using method %s for date %ld_%ld",
 			method_to_str(search->method),
 			search->date.tv_sec,
 			search->date.tv_nsec);
+
+	shd_window_reset(window);
 
 	switch (search->method) {
 	case SHD_LATEST:
@@ -309,12 +313,16 @@ int shd_window_set(struct shd_window *window,
 		break;
 	default:
 		ULOGW("Invalid sample search method");
+		ret = -EINVAL;
 		goto exit;
 		break;
 	}
 
+	SHD_HOOK(HOOK_WINDOW_SEARCH_OVER);
+
 	if (ref_idx < 0) {
-		shd_window_reset(window);
+		ret = -ENOENT;
+		goto exit;
 	} else {
 		/* Number of samples which have been produced after wr_index */
 		int nb_more_recent_samples = interval_between(ref_idx,

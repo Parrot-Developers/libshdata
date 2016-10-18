@@ -258,14 +258,6 @@ size_t shd_data_get_total_size(size_t blob_size,
 struct shd_data_section_desc *shd_data_section_desc_new(struct shd_ctx *ctx,
 				const struct shd_hdr_user_info *hdr_info);
 
-/*
- * @brief Allocate and init window structure
- *
- * @return : sample match,
- *           NULL in case of error
- */
-struct shd_window *shd_window_new(void);
-
 #ifdef __cplusplus
 }
 #endif

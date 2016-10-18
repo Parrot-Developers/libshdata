@@ -167,14 +167,11 @@ int shd_data_find(struct shd_ctx *ctx,
 	ret = shd_window_set(ctx->window, search, ctx->desc,
 				t_index, ctx->hint);
 
-	SHD_HOOK(HOOK_DATA_FIND_SEARCH_OVER);
-
-	if (ret < 0)
-		return -ENOENT;
-	else {
+	if (ret < 0) {
+		return ret;
+	} else {
 		wstart = shd_data_get_sample_ptr(ctx->desc,
 							ctx->window->start_idx);
-		SHD_HOOK(HOOK_DATA_FIND_BEFORE_SAMPLE_INDEX_READ);
 		shd_sync_start_read_session(ctx->sync_ctx, &wstart->sync);
 		return ctx->window->nb_matches;
 	}
