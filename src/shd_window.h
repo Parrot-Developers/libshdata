@@ -48,6 +48,7 @@ struct shd_window {
 };
 
 #include "libshdata.h"
+#include "shd_sync.h"
 
 /*
  * @brief Copy some data from a window of samples
@@ -72,19 +73,21 @@ int shd_window_read(struct shd_window *window,
  * @brief Define the current window
  *
  * @param[out] window : updated window of matching samples
+ * @param[in] hdr : pointer to section synchronization header
  * @param[in] search : pointer to a structure describing the search that the
  * window should match
  * @param[in] desc : pointer to a structure describing the data section
- * @param[in] t_index : index of most recently produced sample
+ * @param[in] hint :  hint for sample search method to use
  *
  * @return number of matching samples in case of success,
  *         -EINVAL in case of invalid parameter
+ *         -EFAULT if result window was overwritten during search,
  *         -ENOENT if no result was found
  */
 int shd_window_set(struct shd_window *window,
+			const struct shd_sync_hdr *hdr,
 			const struct shd_sample_search *search,
 			const struct shd_data_section_desc *desc,
-			int t_index,
 			enum shd_ref_sample_search_hint hint);
 
 /*

@@ -164,8 +164,9 @@ int shd_data_find(struct shd_ctx *ctx,
 			> ctx->desc->nb_samples)
 		return -EINVAL;
 
-	ret = shd_window_set(ctx->window, search, ctx->desc,
-				t_index, ctx->hint);
+	ret = shd_window_set(ctx->window, ctx->sect_mmap->sync_top,
+				search, ctx->desc,
+				ctx->hint);
 
 	if (ret < 0) {
 		return ret;

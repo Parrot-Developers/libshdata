@@ -42,6 +42,17 @@
 #include "libshdata.h"
 #include "shd_window.h"
 
+/*
+ * @brief Structure to hold the context of a search
+ */
+struct search_ctx {
+	/* Index of the most recent sample in the buffer */
+	int t_index;
+	/* Number of writes in the buffer slot containing the most recent
+	 * sample */
+	int nb_writes_top;
+};
+
 static char *method_to_str(enum shd_search_method_t method)
 {
 	char *str[] = {
@@ -276,15 +287,85 @@ static int search_closest_match(const struct shd_data_section_desc *desc,
 	return ret_index;
 }
 
+/*
+ * @brief Start a search session
+ *
+ * @param[in] hdr : pointer to the section's synchronization header
+ * @param[in] desc : pointer to the section's description
+ *
+ * @return the context of the section at the time of call
+ */
+static struct search_ctx start_search(const struct shd_sync_hdr *hdr,
+				const struct shd_data_section_desc *desc)
+{
+	struct search_ctx ret;
+	ret.t_index = shd_sync_get_last_write_index(hdr);
+	struct shd_sample *top = shd_data_get_sample_ptr(desc, ret.t_index);
+
+	ret.nb_writes_top = shd_sync_get_nb_writes(&top->sync);
+
+	return ret;
+}
+
+/*
+ * @brief End a search session
+ *
+ * @param[in] hdr : pointer to the synchronization header
+ * @param[in] ctx : pointer to the search context at the start of the search
+ * @param[in] w_start_idx : index of the start of the window
+ * @param[in] desc : pointer to the description of the section
+ *
+ * @return true if the window was overwritten during the search,
+ *         false otherwise
+ */
+static bool end_search(const struct shd_sync_hdr *hdr,
+		const struct search_ctx *ctx,
+		int w_start_idx,
+		const struct shd_data_section_desc *desc)
+{
+	/* Index of the most recent sample, after the search */
+	int t_index_new = shd_sync_get_last_write_index(hdr);
+	/* Number of samples between the most recent sample at the start of the
+	 * search and the start of the window */
+	int margin = interval_between(index_next(ctx->t_index,
+						desc->nb_samples),
+					w_start_idx,
+					desc->nb_samples);
+	/* Number of samples that were added to the section during the start
+	 * of the search and now */
+	int nb_new_samples = interval_between(ctx->t_index,
+						t_index_new,
+						desc->nb_samples);
+	struct shd_sample *w_start = shd_data_get_sample_ptr(desc, w_start_idx);
+	/* Number of writes on the start of the window */
+	int nb_writes_start = shd_sync_get_nb_writes(&w_start->sync);
+
+	/*
+	 * The window has been overwritten if :
+	 *   - There has been new samples in the section, AND
+	 *   - The start of the window is located before the new most recent
+	 *   sample, AND
+	 *   - The buffer slot that contains the sample at the start of the
+	 *   window has been written more times than the buffer slot that
+	 *   contained the most recent sample at the start of the search (for
+	 *   a given buffer slot, the nb_writes is monotonously increasing
+	 *   from 0 from the moment the section is created, and is updated
+	 *   right at the beginning of sample write)
+	 */
+	return nb_new_samples > 0
+			&& margin < nb_new_samples
+			&& nb_writes_start >= ctx->nb_writes_top;
+}
 
 int shd_window_set(struct shd_window *window,
+			const struct shd_sync_hdr *hdr,
 			const struct shd_sample_search *search,
 			const struct shd_data_section_desc *desc,
-			int t_index,
 			enum shd_ref_sample_search_hint hint)
 {
 	int ref_idx = -1;
 	int ret = -1;
+	struct search_ctx ctx = start_search(hdr, desc);
 
 	SHD_HOOK(HOOK_WINDOW_SEARCH_START);
 
@@ -297,19 +378,19 @@ int shd_window_set(struct shd_window *window,
 
 	switch (search->method) {
 	case SHD_LATEST:
-		ref_idx = t_index;
+		ref_idx = ctx.t_index;
 		break;
 	case SHD_CLOSEST:
 		ref_idx = search_closest_match(desc, search,
-							t_index, hint);
+						ctx.t_index, hint);
 		break;
 	case SHD_FIRST_AFTER:
 		ref_idx = search_first_match_after(desc, search,
-							t_index, hint);
+							ctx.t_index, hint);
 		break;
 	case SHD_FIRST_BEFORE:
 		ref_idx = search_first_match_before(desc, search,
-							t_index, hint);
+							ctx.t_index, hint);
 		break;
 	default:
 		ULOGW("Invalid sample search method");
@@ -326,29 +407,44 @@ int shd_window_set(struct shd_window *window,
 	} else {
 		/* Number of samples which have been produced after wr_index */
 		int nb_more_recent_samples = interval_between(ref_idx,
-							t_index,
+							ctx.t_index,
 							desc->nb_samples);
 
 		/* Number of samples which have been produced between t_index+1
 		 * and wr_index. t_index is the most recent sample. t_index+1
 		 * is the oldest. */
 		int nb_older_samples = interval_between(
-				index_next(t_index, desc->nb_samples),
+				index_next(ctx.t_index, desc->nb_samples),
 				ref_idx,
 				desc->nb_samples);
 
-		window->ref_idx = ref_idx;
-		window->end_idx = index_n_after(ref_idx,
+		int w_start_idx = index_n_before(ref_idx,
+						min(nb_older_samples,
+						search->nb_values_before_date),
+						desc->nb_samples);
+
+		if (end_search(hdr, &ctx, w_start_idx, desc)) {
+			ULOGW("Samples window set during search has been "
+				"overwritten");
+			ret = -EFAULT;
+			goto exit;
+		} else {
+			window->ref_idx = ref_idx;
+			window->end_idx = index_n_after(
+					ref_idx,
 					min(nb_more_recent_samples,
 						search->nb_values_after_date),
 					desc->nb_samples);
-		window->start_idx = index_n_before(ref_idx,
+			window->start_idx = index_n_before(
+					ref_idx,
 					min(nb_older_samples,
 						search->nb_values_before_date),
 					desc->nb_samples);
-		window->nb_matches = interval_between(window->start_idx,
+			window->nb_matches = 1 + interval_between(
+							window->start_idx,
 							window->end_idx,
-							desc->nb_samples) + 1;
+							desc->nb_samples);
+		}
 	}
 
 	ULOGD("Search ended with : nb_matches = %d, w_start = %d, "

@@ -112,7 +112,7 @@
 extern "C" {
 #endif
 
-#define SHD_VERSION_MAJOR 3
+#define SHD_VERSION_MAJOR 4
 #define SHD_VERSION_MINOR 0
 #define SHD_MAGIC_NUMBER 0x65756821
 
@@ -331,7 +331,8 @@ int shd_write_new_blob(struct shd_ctx *ctx,
  *         -EINVAL if any argument is invalid, or search parameters request
  * more than one sample,
  *         -EAGAIN if no value has yet been produced in that memory section
- *         -ENOENT if no sample has been found to match the search
+ *         -ENOENT if no sample has been found to match the search,
+ *         -EFAULT if the matching sample was overwritten during the search
  */
 int shd_read_from_sample(struct shd_ctx *ctx,
 				int n_quantities,
@@ -477,7 +478,8 @@ int shd_commit_sample(struct shd_ctx *ctx);
  *         -EINVAL if any argument is NULL or number of values to search
  * excesses the size of the section
  *         -EAGAIN if no sample has been written to that section yet
- *         -ENOENT if no sample has been found to match the search
+ *         -ENOENT if no sample has been found to match the search,
+ *         -EFAULT if the matching sample was overwritten during the search
  */
 int shd_select_samples(struct shd_ctx *ctx,
 			const struct shd_sample_search *search,

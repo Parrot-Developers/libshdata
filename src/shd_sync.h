@@ -215,6 +215,15 @@ int shd_sync_end_read_session(struct shd_sync_ctx *ctx,
 					struct shd_sync_sample *samp);
 
 /*
+ * @brief Get number of writes on a given sample
+ *
+ * @param[in] samp : Pointer to the sample
+ *
+ * @return : number of writes on the sample
+ */
+int shd_sync_get_nb_writes(const struct shd_sync_sample *samp);
+
+/*
  * @brief Invalidate a data section
  *
  * @param[in,out] ctx : current synchronization context

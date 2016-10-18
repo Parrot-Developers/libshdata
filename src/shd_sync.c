@@ -223,6 +223,11 @@ exit:
 	return ret;
 }
 
+int shd_sync_get_nb_writes(const struct shd_sync_sample *samp)
+{
+	return samp->nb_writes;
+}
+
 int shd_sync_invalidate_section(struct shd_sync_ctx *ctx,
 				struct shd_sync_hdr *hdr, bool creation)
 {
