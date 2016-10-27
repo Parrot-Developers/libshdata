@@ -13,7 +13,8 @@ LOCAL_SRC_FILES := src/shd.c \
 	src/shd_data.c \
 	src/shd_sync.c \
 	src/shd_sample.c \
-	src/shd_window.c
+	src/shd_window.c \
+	src/shd_search.c
 LOCAL_CFLAGS += -DBUILD_TARGET_CPU=$(TARGET_CPU)
 
 ifeq ($(TARGET_CPU),$(filter %$(TARGET_CPU),tegrax1 tegrak1))
