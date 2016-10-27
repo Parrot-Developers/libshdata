@@ -67,44 +67,85 @@ static char *method_to_str(enum shd_search_method_t method)
 		return "Unknown";
 }
 
+/*
+ * @brief Get the max depth for a search within the section
+ *
+ * @details If the section has been recently created and hasn't looped at least
+ * once through the whole buffer, not all the samples are valid ; this function
+ * allows to limit the scope of the search only to the valid samples
+ *
+ * @param[in] desc : pointer to section description
+ * @param[in] ctx : search context
+ *
+ * @return max possible depth if applicable,
+ *         -1 if all the samples are invalid
+ */
+static int get_max_search_depth(const struct shd_data_section_desc *desc,
+				const struct search_ctx *ctx)
+{
+	unsigned int depth;
+
+	/* If the top sample has been written at least twice, it means that the
+	 * whole section has been written at least once, and the whole
+	 * section is eligible for research */
+	if (ctx->nb_writes_top > 0)
+		return desc->nb_samples - 1;
+
+	/* Else, we run through the whole buffer and stop as soon as a sample
+	 * is invalid */
+	for (depth = 0; depth < desc->nb_samples; depth++) {
+		int idx = index_n_before(ctx->t_index, depth, desc->nb_samples);
+		struct shd_sample *curr = shd_data_get_sample_ptr(desc, idx);
+
+		if (!shd_sync_is_sample_valid(&curr->sync))
+			break;
+	}
+
+	return depth - 1;
+}
+
 static bool search_reference_sample_naive(
 				const struct shd_data_section_desc *desc,
 				struct timespec date,
-				int t_index,
+				const struct search_ctx *ctx,
 				int *m_index,
 				uint32_t *s_searched)
 {
 	bool found_ref = false;
 	struct shd_sample *curr;
+	int max_depth = get_max_search_depth(desc, ctx);
+	int searched = 0;
 
-	*m_index = t_index;
-	*s_searched = 0;
+	*m_index = ctx->t_index;
 
-	while (*s_searched <= desc->nb_samples && !found_ref) {
+	while (searched <= max_depth && !found_ref) {
 		curr = shd_data_get_sample_ptr(desc, *m_index);
 		if (shd_sample_timestamp_cmp(curr, date) < 0)
 			found_ref = true;
 		else
 			index_decrement(m_index, desc->nb_samples);
-		(*s_searched)++;
+		searched++;
 	}
+
+	*s_searched = searched;
 	return found_ref;
 }
 
 static bool search_reference_sample_binary(
 				const struct shd_data_section_desc *desc,
 				struct timespec date,
-				int t_index,
+				const struct search_ctx *ctx,
 				int *m_index,
 				uint32_t *s_searched)
 {
-	int imin = 0, imax = 0, imid = 0;
+	int imin = 0, imax = 0, imid = 0, max_depth = 0;
 	struct shd_sample *curr = NULL;
 	int res = 0;
 
 	/* imin, imax, imid are relative index in window */
 	imin = 0;
-	imax = desc->nb_samples - 1;
+	max_depth = get_max_search_depth(desc, ctx) + 1;
+	imax = max_depth - 1;
 
 	*s_searched = 0;
 
@@ -112,8 +153,9 @@ static bool search_reference_sample_binary(
 		imid = (imin + imax) / 2;
 
 		/* Get real index of sample */
-		*m_index = index_n_before(t_index, desc->nb_samples - 1 - imid,
-				desc->nb_samples);
+		*m_index = index_n_before(ctx->t_index,
+					  max_depth - 1 - imid,
+					  desc->nb_samples);
 		curr = shd_data_get_sample_ptr(desc, *m_index);
 		(*s_searched)++;
 
@@ -127,8 +169,9 @@ static bool search_reference_sample_binary(
 
 	/* imin is the closest value, recompute only if we don't have it */
 	if (imin != imid) {
-		*m_index = index_n_before(t_index, desc->nb_samples - 1 - imin,
-				desc->nb_samples);
+		*m_index = index_n_before(ctx->t_index,
+					  max_depth - 1 - imin,
+					  desc->nb_samples);
 		curr = shd_data_get_sample_ptr(desc, *m_index);
 		res = shd_sample_timestamp_cmp(curr, date);
 	}
@@ -157,7 +200,7 @@ static bool search_reference_sample_binary(
  *
  * @param[in] desc : description of the section
  * @param[in] date : reference date
- * @param[in] t_index : index of the last published sample
+ * @param[in] ctx : context of the search
  * @param[out] m_index : index of the reference sample, if found
  * @param[out] s_searched : number of samples which were browsed in the section
  * during the search
@@ -168,7 +211,7 @@ static bool search_reference_sample_binary(
  */
 static bool search_reference_sample(const struct shd_data_section_desc *desc,
 				struct timespec date,
-				int t_index,
+				const struct search_ctx *ctx,
 				int *m_index,
 				uint32_t *s_searched,
 				enum shd_ref_sample_search_hint hint)
@@ -176,22 +219,22 @@ static bool search_reference_sample(const struct shd_data_section_desc *desc,
 	switch (hint) {
 	case SHD_WINDOW_REF_SEARCH_NAIVE:
 		return search_reference_sample_naive(desc, date,
-						t_index, m_index, s_searched);
+						ctx, m_index, s_searched);
 		break;
 	case SHD_WINDOW_REF_SEARCH_BINARY:
 		return search_reference_sample_binary(desc, date,
-						t_index, m_index, s_searched);
+						ctx, m_index, s_searched);
 		break;
 	default:
 		return search_reference_sample_naive(desc, date,
-						t_index, m_index, s_searched);
+						ctx, m_index, s_searched);
 		break;
 	}
 }
 
 static int search_first_match_after(const struct shd_data_section_desc *desc,
 				const struct shd_sample_search *search,
-				int t_index,
+				const struct search_ctx *ctx,
 				enum shd_ref_sample_search_hint hint)
 {
 	int m_index = -1, ret_index = -1;
@@ -199,13 +242,13 @@ static int search_first_match_after(const struct shd_data_section_desc *desc,
 	uint32_t s_searched;
 
 	if (search_reference_sample(desc, search->date,
-					t_index, &m_index,
+					ctx, &m_index,
 					&s_searched, hint)) {
 		/* If the reference index is set to the top index and the
 		 * function returned true, it means that all the samples are
 		 * in the past of the search date : the only case where there
 		 * is something to do is if the reference index is different */
-		if (m_index != t_index) {
+		if (m_index != ctx->t_index) {
 			ret_index = index_next(m_index, desc->nb_samples);
 			found_ref = true;
 		}
@@ -213,7 +256,7 @@ static int search_first_match_after(const struct shd_data_section_desc *desc,
 		/* If no reference sample has been found, it means that all
 		 * the samples are set after the search date, so we return
 		 * the oldest sample */
-		ret_index = index_next(t_index, desc->nb_samples);
+		ret_index = index_next(ctx->t_index, desc->nb_samples);
 		found_ref = true;
 	}
 
@@ -226,7 +269,7 @@ static int search_first_match_after(const struct shd_data_section_desc *desc,
 
 static int search_first_match_before(const struct shd_data_section_desc *desc,
 				const struct shd_sample_search *search,
-				int t_index,
+				const struct search_ctx *ctx,
 				enum shd_ref_sample_search_hint hint)
 {
 	int m_index = -1, ret_index = -1;
@@ -234,7 +277,7 @@ static int search_first_match_before(const struct shd_data_section_desc *desc,
 	uint32_t s_searched;
 
 	if (search_reference_sample(desc, search->date,
-					t_index, &m_index,
+					ctx, &m_index,
 					&s_searched, hint)) {
 		ret_index = m_index;
 		found_ref = true;
@@ -249,7 +292,7 @@ static int search_first_match_before(const struct shd_data_section_desc *desc,
 
 static int search_closest_match(const struct shd_data_section_desc *desc,
 				const struct shd_sample_search *search,
-				int t_index,
+				const struct search_ctx *ctx,
 				enum shd_ref_sample_search_hint hint)
 {
 	int b_index = -1;
@@ -257,15 +300,15 @@ static int search_closest_match(const struct shd_data_section_desc *desc,
 	uint32_t s_searched;
 
 	if (!search_reference_sample(desc, search->date,
-					t_index, &b_index,
+					ctx, &b_index,
 					&s_searched, hint)) {
 		/* All the samples are set in the future of the searched date,
 		 * and so the closest sample is in fact the oldest one */
-		ret_index = index_next(t_index, desc->nb_samples);
-	} else if (b_index == t_index) {
+		ret_index = index_next(ctx->t_index, desc->nb_samples);
+	} else if (b_index == ctx->t_index) {
 		/* All the samples are set in the past of the searched date,
 		* and so the closest sample is in fact the latest one */
-		ret_index = t_index;
+		ret_index = ctx->t_index;
 	} else {
 		/* b_index has been set to the date of the sample right before
 		 * the search date */
@@ -382,15 +425,15 @@ int shd_window_set(struct shd_window *window,
 		break;
 	case SHD_CLOSEST:
 		ref_idx = search_closest_match(desc, search,
-						ctx.t_index, hint);
+						&ctx, hint);
 		break;
 	case SHD_FIRST_AFTER:
 		ref_idx = search_first_match_after(desc, search,
-							ctx.t_index, hint);
+							&ctx, hint);
 		break;
 	case SHD_FIRST_BEFORE:
 		ref_idx = search_first_match_before(desc, search,
-							ctx.t_index, hint);
+							&ctx, hint);
 		break;
 	default:
 		ULOGW("Invalid sample search method");

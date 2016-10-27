@@ -224,6 +224,25 @@ int shd_sync_end_read_session(struct shd_sync_ctx *ctx,
 int shd_sync_get_nb_writes(const struct shd_sync_sample *samp);
 
 /*
+ * @brief Invalidate given sample
+ *
+ * @param[in] samp : pointer to the sample
+ *
+ * @return : 0 in all cases
+ */
+int shd_sync_invalidate_sample(struct shd_sync_sample *samp);
+
+/*
+ * @brief Indicates validity of a sample
+ *
+ * @param[in] samp : pointer to the sample
+ *
+ * @return : true if the sample is valid,
+ *           false otherwise
+ */
+bool shd_sync_is_sample_valid(const struct shd_sync_sample *samp);
+
+/*
  * @brief Invalidate a data section
  *
  * @param[in,out] ctx : current synchronization context

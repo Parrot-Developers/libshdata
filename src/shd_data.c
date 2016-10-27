@@ -59,9 +59,14 @@ shd_data_get_sample_ptr(const struct shd_data_section_desc *desc,
 
 int shd_data_clear_section(const struct shd_data_section_desc *desc)
 {
+	unsigned int i;
 	memset(desc->data_section_start,
 		0,
 		shd_data_get_total_size(desc->blob_size, desc->nb_samples));
+	for (i = 0; i < desc->nb_samples; i++) {
+		struct shd_sample *samp = shd_data_get_sample_ptr(desc, i);
+		shd_sync_invalidate_sample(&samp->sync);
+	}
 
 	return 0;
 }

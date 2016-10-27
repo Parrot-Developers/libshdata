@@ -228,6 +228,17 @@ int shd_sync_get_nb_writes(const struct shd_sync_sample *samp)
 	return samp->nb_writes;
 }
 
+int shd_sync_invalidate_sample(struct shd_sync_sample *samp)
+{
+	samp->nb_writes = -1;
+	return 0;
+}
+
+bool shd_sync_is_sample_valid(const struct shd_sync_sample *samp)
+{
+	return samp->nb_writes != -1;
+}
+
 int shd_sync_invalidate_section(struct shd_sync_ctx *ctx,
 				struct shd_sync_hdr *hdr, bool creation)
 {

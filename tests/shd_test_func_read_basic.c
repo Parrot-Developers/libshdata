@@ -959,6 +959,36 @@ static void test_func_basic_read_change_blob_structure(void)
 				&rev);
 	CU_ASSERT_PTR_NOT_NULL_FATAL(ctx_cons);
 
+	/*
+	 * Before re-creation of the section, it had been filled with valid
+	 * samples that should not be visible now that the section has been
+	 * created again by the producer. So we setup a search that is supposed
+	 * to fail, but would succeed if the section somehow kept a "memory"
+	 * of its past state
+	 */
+	struct shd_sample_search search_before = {
+		.nb_values_after_date = 0,
+		.nb_values_before_date = 0,
+		.date = sample_meta.ts,
+		.method = SHD_FIRST_BEFORE
+	};
+	if (time_step(&sample_meta.ts) < 0)
+		CU_FAIL_FATAL("Could not get time");
+
+	/* Write at least one new sample, so that we don't fall in the "no
+	 * sample produced yet" case */
+	ret = shd_write_new_blob(ctx_prod,
+			&s_blob_alt_size,
+			sizeof(s_blob_alt_size),
+			&sample_meta);
+	CU_ASSERT_EQUAL(ret, 0);
+
+	/* Try to read a sample that could only be found if the section kept
+	 * an history of the samples */
+	ret = shd_read_from_sample(ctx_cons, 0, &search_before, NULL,
+			blob_samp_alt_size);
+	CU_ASSERT_EQUAL(ret, -ENOENT);
+
 	if (time_step(&sample_meta.ts) < 0)
 		CU_FAIL_FATAL("Could not get time");
 	if (time_step(&search.date) < 0)
