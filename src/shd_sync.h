@@ -63,7 +63,7 @@ struct shd_sync_hdr {
 /*
  * @brief Synchronization primitives required by the library
  */
-struct shd_sync_primitves {
+struct shd_sync_primitives {
 	bool (*compare_and_swap) (int *ptr, int oldval, int newval);
 	int (*add_and_fetch) (int *ptr, int value);
 };
@@ -88,7 +88,7 @@ struct shd_sync_ctx {
 	 * caller */
 	int nb_writes;
 	/* Primitives to use on the section */
-	struct shd_sync_primitves primitives;
+	struct shd_sync_primitives primitives;
 };
 
 /*

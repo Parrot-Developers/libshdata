@@ -161,8 +161,10 @@ static struct communication_zone *communication_zone_get(void)
 	return zone;
 }
 
-static void communication_zone_destroy(void)
+static void communication_zone_destroy(struct communication_zone *zone)
 {
+	if (zone)
+		munmap(zone, sizeof(struct communication_zone));
 	shm_unlink(COMMUNICATION_ZONE_NAME);
 }
 
@@ -176,7 +178,7 @@ static struct communication_zone *communication_zone_create(void)
 	/* If creation fails, we attempt to destroy the shared memory first ;
 	 * it may still be there from a previous failed test */
 	if (fd < 0 && errno == EEXIST) {
-		communication_zone_destroy();
+		communication_zone_destroy(zone);
 		fd = shm_open(COMMUNICATION_ZONE_NAME,
 			      O_CREAT | O_EXCL | O_RDWR, 0666);
 	}
@@ -264,6 +266,7 @@ static void sig_int_handler(int sig)
 {
 	struct communication_zone *zone = communication_zone_get();
 	zone->test_over = 1;
+	communication_zone_destroy(zone);
 }
 
 static void producer_loop(struct test_setup *setup)
@@ -309,8 +312,16 @@ static void producer_loop(struct test_setup *setup)
 
 		/* The loop "wakes up" at every timer tick : however we only
 		 * wish to really wake up at some moments */
-		poll(&pollfd, 1, 1000);
-		int ret = read(pollfd.fd, &timer_value, sizeof(timer_value));
+		int ret = poll(&pollfd, 1, 1000);
+		if (ret == 0) {
+			ULOGP("poll timeout");
+			break;
+		} else if (ret < 0) {
+			ULOGP("poll error : %s", strerror(errno));
+			break;
+		}
+
+		ret = read(pollfd.fd, &timer_value, sizeof(timer_value));
 		index += timer_value;
 		if (index < nextLoopIndex)
 			continue;
@@ -351,14 +362,15 @@ exit:
 	zone->test_over = 1;
 	zone->res_prod.total_loops = currentLoop;
 	zone->res_prod.produced_samples = currentLoop;
+	communication_zone_destroy(zone);
 	shd_close(ctx_prod, NULL);
 	free(data);
 }
 
 static void consumer_one_sample_loop(struct test_setup *setup,
 					struct communication_zone *zone,
-					struct shd_ctx *ctx_cons,
-					struct shd_revision *rev,
+					struct shd_ctx **ctx_cons,
+					struct shd_revision **rev,
 					struct pollfd *pollfd)
 {
 	int index = 0;
@@ -384,8 +396,16 @@ static void consumer_one_sample_loop(struct test_setup *setup,
 		uint64_t timer_value;
 		nextLoopIndex = (currentLoop + 1) * setup->cons_scaler;
 
-		poll(pollfd, 1, 1000);
-		int ret = read(pollfd->fd, &timer_value, sizeof(timer_value));
+		int ret = poll(pollfd, 1, 1000);
+		if (ret == 0) {
+			ULOGC("poll timeout");
+			break;
+		} else if (ret < 0) {
+			ULOGC("poll error : %s", strerror(errno));
+			break;
+		}
+
+		ret = read(pollfd->fd, &timer_value, sizeof(timer_value));
 		index = timer_value;
 		if (index < nextLoopIndex)
 			continue;
@@ -396,7 +416,7 @@ static void consumer_one_sample_loop(struct test_setup *setup,
 		}
 
 		do {
-			ret = shd_read_from_sample(ctx_cons, 0, &search, NULL,
+			ret = shd_read_from_sample(*ctx_cons, 0, &search, NULL,
 					blob_samp);
 			if (ret < 0)
 				usleep(myPeriod/10);
@@ -406,13 +426,13 @@ static void consumer_one_sample_loop(struct test_setup *setup,
 			ULOGC("Error encountered while reading from "
 					"sample : %s", strerror(-ret));
 
-		ret = shd_end_read(ctx_cons, rev);
+		ret = shd_end_read(*ctx_cons, *rev);
 		if (ret < 0 && ret == -ENODEV) {
 			ULOGC("Reopening memory section ...");
 			do {
-				shd_close(ctx_cons, rev);
-				ctx_cons = shd_open(BLOB_NAME, NULL, &rev);
-			} while (ctx_cons == NULL);
+				shd_close(*ctx_cons, *rev);
+				*ctx_cons = shd_open(BLOB_NAME, NULL, rev);
+			} while (*ctx_cons == NULL);
 		} else if (ret < 0) {
 			ULOGC("Error encountered while ending read : %s",
 					strerror(-ret));
@@ -424,34 +444,34 @@ static void consumer_one_sample_loop(struct test_setup *setup,
 	free(read_data);
 }
 
-static int try_read(struct shd_ctx *ctx_cons,
+static int try_read(struct shd_ctx **ctx_cons,
 		    struct communication_zone *zone,
 		    struct test_setup *setup,
 		    struct shd_sample_metadata *metadata,
-		    struct shd_revision *rev,
+		    struct shd_revision **rev,
 		    uint8_t *read_data,
 		    int current_loop,
-		    struct timespec *most_recent)
+		    struct timespec *most_recent,
+		    struct shd_search_result *result)
 {
 	int ret;
 	struct timespec diff = { 0, 0 };
 	uint64_t diff_us = 0;
 	uint64_t prod_period_us = setup->prod_scaler
 					* setup->timer_period / 1000;
-	struct shd_search_result result;
 
-	ret = shd_read_quantity(ctx_cons, NULL, read_data,
+	ret = shd_read_quantity(*ctx_cons, NULL, read_data,
 				setup->blob_size * (setup->samples_after + 1));
 	if (ret < 0)
 		ULOGC("Problem reading quantity : %s", strerror(-ret));
 
-	ret = shd_end_read(ctx_cons, rev);
+	ret = shd_end_read(*ctx_cons, *rev);
 	if (ret < 0 && ret == -ENODEV) {
 		ULOGC("Reopening memory section ...");
 		do {
-			shd_close(ctx_cons, rev);
-			ctx_cons = shd_open(BLOB_NAME, NULL, &rev);
-		} while (ctx_cons == NULL);
+			shd_close(*ctx_cons, *rev);
+			*ctx_cons = shd_open(BLOB_NAME, NULL, rev);
+		} while (*ctx_cons == NULL);
 	} else if (ret >= 0) {
 		ret = time_timespec_cmp(most_recent, &metadata[0].ts);
 		if (ret > 0) {
@@ -476,7 +496,7 @@ static int try_read(struct shd_ctx *ctx_cons,
 				zone->res_cons.last_missed = current_loop;
 			}
 
-			*most_recent = metadata[result.nb_matches - 1].ts;
+			*most_recent = metadata[result->nb_matches - 1].ts;
 		}
 	}
 
@@ -485,8 +505,8 @@ static int try_read(struct shd_ctx *ctx_cons,
 
 static void consumer_several_sample_loop(struct test_setup *setup,
 					struct communication_zone *zone,
-					struct shd_ctx *ctx_cons,
-					struct shd_revision *rev,
+					struct shd_ctx **ctx_cons,
+					struct shd_revision **rev,
 					struct pollfd *pollfd)
 {
 	int index = 0;
@@ -515,8 +535,16 @@ static void consumer_several_sample_loop(struct test_setup *setup,
 		uint64_t timer_value;
 		nextLoopIndex = (currentLoop + 1) * setup->cons_scaler;
 
-		poll(pollfd, 1, 1000);
-		int ret = read(pollfd->fd, &timer_value, sizeof(timer_value));
+		int ret = poll(pollfd, 1, 1000);
+		if (ret == 0) {
+			ULOGC("poll timeout");
+			break;
+		} else if (ret < 0) {
+			ULOGC("poll error : %s", strerror(errno));
+			break;
+		}
+
+		ret = read(pollfd->fd, &timer_value, sizeof(timer_value));
 		index += timer_value;
 		if (index < nextLoopIndex)
 			continue;
@@ -530,7 +558,7 @@ static void consumer_several_sample_loop(struct test_setup *setup,
 		time_timespec_add_us(&most_recent, 1, &search.date);
 
 		do {
-			ret = shd_select_samples(ctx_cons, &search, &metadata,
+			ret = shd_select_samples(*ctx_cons, &search, &metadata,
 						 &result);
 			if (ret < 0)
 				usleep(myPeriod/10);
@@ -543,7 +571,7 @@ static void consumer_several_sample_loop(struct test_setup *setup,
 		} else {
 			try_read(ctx_cons, zone, setup,
 				 metadata, rev, read_data,
-				 currentLoop, &most_recent);
+				 currentLoop, &most_recent, &result);
 		}
 	}
 	zone->res_cons.total_loops = currentLoop;
@@ -570,10 +598,13 @@ static void consumer_loop(struct test_setup *setup)
 	zone->consumer_ready = 1;
 
 	if (setup->samples_after == 0)
-		consumer_one_sample_loop(setup, zone, ctx_cons, rev, &pollfd);
+		consumer_one_sample_loop(setup, zone, &ctx_cons, &rev, &pollfd);
 	else
-		consumer_several_sample_loop(setup, zone, ctx_cons, rev,
+		consumer_several_sample_loop(setup, zone, &ctx_cons, &rev,
 					     &pollfd);
+
+	shd_close(ctx_cons, rev);
+	communication_zone_destroy(zone);
 }
 
 static void launch_test(int timer_fd, struct test_setup *setup)
@@ -673,6 +704,6 @@ int main(int argc, char *argv[])
 			zone->res_cons.last_missed,
 			zone->res_cons.total_loops);
 
-	communication_zone_destroy();
+	communication_zone_destroy(zone);
 	return 0;
 }

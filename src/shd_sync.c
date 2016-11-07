@@ -65,7 +65,7 @@ static int x1_bpmp_add_and_fetch(int *ptr, int value)
 	return *ptr;
 }
 
-static int init_primitives(struct shd_sync_primitves *primitives,
+static int init_primitives(struct shd_sync_primitives *primitives,
 				enum shd_section_type section_type)
 {
 	if (primitives == NULL)

@@ -41,6 +41,7 @@
 #include <sys/mman.h>		/* For mmap */
 #include <sys/file.h>		/* for flock */
 #include <unistd.h>		/* For ftruncate */
+#include <futils/fdutils.h>
 #include "shd_private.h"
 #include "shd_section.h"
 #include "shd_hdr.h"
@@ -157,7 +158,6 @@ static int from_blob_to_section_shm_other(const char *blob_name,
 						enum shd_section_operation op)
 {
 	char *file_path = NULL;
-	int fdflags;
 	int mode = SHD_SECTION_MODE;
 	int flags = get_open_flags(op);
 
@@ -172,19 +172,17 @@ static int from_blob_to_section_shm_other(const char *blob_name,
 	/* Create a new shm memory object using a simple "open" */
 	id->id.shm_fd = open(file_path, flags, mode);
 	if (id->id.shm_fd == -1) {
-		free(file_path);
-		return -errno;
+		ret = -errno;
+		goto exit;
 	}
 
-	/* Now set the FD_CLOEXEC bit.  */
-	fdflags = fcntl(id->id.shm_fd, F_GETFD, 0);
-	if (fdflags != -1) {
-		fdflags |= FD_CLOEXEC;
-		fcntl(id->id.shm_fd, F_SETFD, fdflags);
-	}
+	ret = fd_set_close_on_exec(id->id.shm_fd);
+	if (ret < 0)
+		close(id->id.shm_fd);
 
+exit:
 	free(file_path);
-	return 0;
+	return ret;
 }
 
 static int from_blob_to_section_dev_mem(const char *blob_name,
@@ -194,31 +192,34 @@ static int from_blob_to_section_dev_mem(const char *blob_name,
 {
 	int mode = SHD_SECTION_MODE;
 	int flags = get_open_flags(op);
-	int fdflags;
 	int ret;
 
 	id->type = SHD_SECTION_DEV_MEM;
 
 	/* Open the base "/dev/mem" */
 	id->id.dev_mem.fd = open(shd_root, flags, mode);
-	if (id->id.shm_fd == -1)
-		return -errno;
-
-	/* Now set the FD_CLOEXEC bit.  */
-	fdflags = fcntl(id->id.dev_mem.fd, F_GETFD, 0);
-	if (fdflags != -1) {
-		fdflags |= FD_CLOEXEC;
-		fcntl(id->id.dev_mem.fd, F_SETFD, fdflags);
+	if (id->id.shm_fd == -1) {
+		ret = -errno;
+		goto error_no_close;
 	}
+
+	ret = fd_set_close_on_exec(id->id.shm_fd);
+	if (ret < 0)
+		goto error_close;
 
 	ret = dev_mem_lookup(blob_name, &id->id.dev_mem.offset);
 	if (ret < 0) {
 		ULOGW("Lookup for blob \"%s\" ended with error : %s",
 				blob_name, strerror(-ret));
-		return ret;
+		goto error_close;
 	}
 
 	return 0;
+
+error_close:
+	close(id->id.dev_mem.fd);
+error_no_close:
+	return ret;
 }
 
 static int from_blob_to_section(const char *blob_name,

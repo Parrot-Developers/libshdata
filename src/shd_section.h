@@ -107,7 +107,8 @@ struct shd_section {
  * @return : 0 in case of success,
  *           -ENAMETOOLONG if blob_name exceeds max length
  *           -EINVAL if blob_name contains a "/"
- *           -EEXIST if a memory section has already been created for this blob.
+ *           -EEXIST if a memory section has already been created for this blob,
+ *           other negative errno in case of error in "fcntl"
  */
 int shd_section_new(const char *blob_name, const char *shd_root,
 			struct shd_section_id *id);
@@ -122,7 +123,8 @@ int shd_section_new(const char *blob_name, const char *shd_root,
  *
  * @return : 0 in case of success,
  *           -ENAMETOOLONG if blob_name exceeds max length
- *           -EINVAL if blob_name contains a "/"
+ *           -EINVAL if blob_name contains a "/",
+ *           other negative errno in case of error in "fcntl"
  */
 int shd_section_open(const char *blob_name, const char *shd_root,
 			struct shd_section_id *id);
