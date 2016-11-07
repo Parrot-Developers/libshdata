@@ -48,6 +48,7 @@ extern "C" {
 #include <limits.h>		/* For NAME_MAX macro */
 #include <inttypes.h>
 #include "libshdata.h"
+#include "shd_sync.h"
 
 struct shd_hdr;
 
@@ -157,10 +158,13 @@ struct shd_section_backend {
 struct shd_section_properties {
 	const struct shd_section_backend *backend;
 	const void *backend_param;
+
+	struct shd_sync_primitives primitives;
 };
 
 struct shd_section_id {
 	struct shd_section_backend backend;
+	struct shd_sync_primitives primitives;
 	void *instance;
 };
 

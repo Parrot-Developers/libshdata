@@ -102,6 +102,7 @@ int shd_section_lookup(const char *blob_name,
 
 		properties->backend = &shd_dev_mem_backend;
 		properties->backend_param = &backend_param;
+		shd_sync_primitives_set_builtin(&properties->primitives);
 
 		return 0;
 	} else if (!strncmp(blob_name, "myBlob_override", BLOB_NAME_MAX_SIZE)) {
@@ -112,11 +113,13 @@ int shd_section_lookup(const char *blob_name,
 
 		properties->backend = &shd_shm_backend;
 		properties->backend_param = &backend_param;
+		shd_sync_primitives_set_builtin(&properties->primitives);
 
 		return 0;
 	} else {
 		properties->backend = &shd_shm_backend;
 		properties->backend_param = NULL;
+		shd_sync_primitives_set_builtin(&properties->primitives);
 
 		return 0;
 	}

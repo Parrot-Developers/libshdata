@@ -34,6 +34,7 @@
 #include "shd_private.h"
 #include "shd_utils.h"
 #include "shd_data.h"
+#include "shd_section.h"
 #include "shd_sync.h"
 
 static int builtin_add_and_fetch(int *ptr, int value)
@@ -49,21 +50,6 @@ static int x1_bpmp_add_and_fetch(int *ptr, int value)
 	return *ptr;
 }
 
-static int init_primitives(struct shd_sync_primitives *primitives,
-				enum shd_section_type section_type)
-{
-	if (primitives == NULL)
-		return -EINVAL;
-
-	if (BUILD_USE_ALTERNATIVE_X1_BPMP_PRIMITIVES_FOR_DEV_MEM
-			&& section_type == SHD_SECTION_DEV_MEM)
-		primitives->add_and_fetch = x1_bpmp_add_and_fetch;
-	else
-		primitives->add_and_fetch = builtin_add_and_fetch;
-
-	return 0;
-}
-
 int shd_sync_hdr_init(struct shd_sync_hdr *sync_hdr)
 {
 	sync_hdr->write_index = -1;
@@ -72,7 +58,7 @@ int shd_sync_hdr_init(struct shd_sync_hdr *sync_hdr)
 	return 0;
 }
 
-struct shd_sync_ctx *shd_sync_ctx_new(enum shd_section_type section_type)
+struct shd_sync_ctx *shd_sync_ctx_new(const struct shd_section_id *id)
 {
 	struct shd_sync_ctx *ctx;
 
@@ -82,11 +68,7 @@ struct shd_sync_ctx *shd_sync_ctx_new(enum shd_section_type section_type)
 
 	ctx->index = -1;
 	ctx->prev_index = -1;
-
-	if (init_primitives(&ctx->primitives, section_type) < 0) {
-		free(ctx);
-		return NULL;
-	}
+	ctx->primitives = id->primitives;
 
 	return ctx;
 }
@@ -291,4 +273,14 @@ int shd_sync_get_last_write_index(const struct shd_sync_hdr *hdr)
 		return -1;
 
 	return hdr->write_index;
+}
+
+int shd_sync_primitives_set_builtin(struct shd_sync_primitives *primitives)
+{
+	if (!primitives)
+		return -EINVAL;
+
+	primitives->add_and_fetch = builtin_add_and_fetch;
+
+	return 0;
 }

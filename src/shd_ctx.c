@@ -54,7 +54,7 @@ struct shd_ctx *shd_ctx_new(struct shd_section_id *id, const char *blob_name)
 
 	ctx->blob_name = strdup(blob_name);
 	ctx->id = *id;
-	ctx->sync_ctx = shd_sync_ctx_new(id->backend.type);
+	ctx->sync_ctx = shd_sync_ctx_new(id);
 	if (ctx->sync_ctx == NULL)
 		goto error;
 

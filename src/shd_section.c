@@ -113,6 +113,7 @@ static int from_blob_to_section(const char *blob_name,
 	}
 
 	id->backend = *properties.backend;
+	id->primitives = properties.primitives;
 
 	return (*id->backend.open) (blob_name, op,
 			properties.backend_param, &id->instance);

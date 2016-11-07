@@ -99,7 +99,8 @@ struct shd_sync_sample {
 };
 
 #include "shd_data.h"
-#include "shd_section.h"
+
+struct shd_section_id;
 
 /*
  * @brief Init synchronization header
@@ -114,12 +115,12 @@ int shd_sync_hdr_init(struct shd_sync_hdr *sync_hdr);
 /*
  * @brief Allocate and create a new sync context
  *
- * @param[in] section_type : Type of section
+ * @param[in] id : The id of the section
  *
  * @return : an allocated sync context,
  *           NULL in case of error
  */
-struct shd_sync_ctx *shd_sync_ctx_new(enum shd_section_type section_type);
+struct shd_sync_ctx *shd_sync_ctx_new(const struct shd_section_id *id);
 
 /*
  * @brief Destroy a sync context
@@ -324,5 +325,14 @@ int shd_sync_get_next_write_index(const struct shd_sync_hdr *hdr,
  */
 int shd_sync_get_last_write_index(const struct shd_sync_hdr *hdr);
 
+/**
+ * @brief init a shd_sync_primitves to gcc builtin primitives
+ *
+ * @param[in] primitives : the primitives to init
+ *
+ * @return : 0 if no error
+ *           -EINVAL if primitives is NULL
+ */
+int shd_sync_primitives_set_builtin(struct shd_sync_primitives *primitives);
 
 #endif /* _SHD_SYNC_H_ */

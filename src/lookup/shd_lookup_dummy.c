@@ -40,6 +40,7 @@ int shd_section_lookup(const char *blob_name,
 {
 	properties->backend = &shd_shm_backend;
 	properties->backend_param = NULL;
+	shd_sync_primitives_set_builtin(&properties->primitives);
 
 	return 0;
 }
