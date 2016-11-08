@@ -23,48 +23,24 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- * @file dev_mem_lookup_x1.c
+ * @file shd_lookup_default.c
  *
- * @brief Dev-mem lookup table for X1 target
+ * @brief Default implementation of section lookup function
  *
  */
 
 #include <stdint.h>
 #include <string.h>
 #include <errno.h>
-#include <dev_mem_lookup.h>
-#include <liblk_shdata.h>
+#include "shd_section.h"
+#include "backend/shd_shm.h"
 
-#define BLOB_NAME_MAX_SIZE 255
-
-#define	LK_DEVICE_COUNT 6
-
-const char *lk_device[LK_DEVICE_COUNT] = {
-	"imu_flight",
-	"imu_cam",
-	"cam_h",
-	"cam_v",
-	"cppm",
-	"ulog"
-};
-
-uint32_t lk_addr[LK_DEVICE_COUNT] = {
-	LIBLK_SHD_IMU_FLIGHT_ADDR,
-	LIBLK_SHD_IMU_CAM_ADDR,
-	LIBLK_SHD_CAM_H_ADDR,
-	LIBLK_SHD_CAM_V_ADDR,
-	LIBLK_SHD_CPPM_ADDR,
-	LIBLK_SHD_ULOG_ADDR
-};
-
-int dev_mem_lookup(const char *blob_name, intptr_t *phys_addr)
+int __attribute__((weak)) shd_section_lookup(const char *blob_name,
+			struct shd_section_properties *properties)
 {
-	int i;
-	for(i = 0; i < LK_DEVICE_COUNT; i++) {
-		if (!strncmp(blob_name, lk_device[i], BLOB_NAME_MAX_SIZE)) {
-			*phys_addr = lk_addr[i];
-			return 0;
-		}
-	}
-	return -ENOENT;
+	properties->backend = &shd_shm_backend;
+	properties->backend_param = NULL;
+	shd_sync_primitives_set_builtin(&properties->primitives);
+
+	return 0;
 }

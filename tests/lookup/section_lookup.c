@@ -23,7 +23,7 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- * @file dev_mem_lookup.c
+ * @file section_lookup.c
  *
  * @brief Implem file for dev-mem lookup feature for unit-test mode
  *
@@ -46,10 +46,10 @@
  * (Stack overflow topic "How to find the physical address of a variable from
  * user-space in Linux?")
  */
-static intptr_t vtop(uintptr_t vaddr)
+static uintptr_t vtop(uintptr_t vaddr)
 {
 	FILE *pagemap;
-	intptr_t paddr = 0;
+	uintptr_t paddr = 0;
 	int offset = (vaddr / sysconf(_SC_PAGESIZE)) * sizeof(uint64_t);
 	uint64_t e;
 

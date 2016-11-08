@@ -2,9 +2,9 @@ LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)
 
-LOCAL_MODULE := libshdata-core
+LOCAL_MODULE := libshdata
 LOCAL_CATEGORY_PATH := libs
-LOCAL_DESCRIPTION := Shared memory low level library core
+LOCAL_DESCRIPTION := Shared memory low level library
 LOCAL_SRC_FILES := src/shd.c \
 	src/shd_ctx.c \
 	src/shd_section.c \
@@ -19,52 +19,44 @@ LOCAL_SRC_FILES := src/shd.c \
 	src/backend/shd_shm.c
 LOCAL_CFLAGS += -DBUILD_TARGET_CPU=$(TARGET_CPU)
 
-ifeq ($(TARGET_CPU),$(filter %$(TARGET_CPU),tegrax1 tegrak1))
-LOCAL_CFLAGS += -DBUILD_USE_ALTERNATIVE_X1_BPMP_PRIMITIVES_FOR_DEV_MEM=1
-else
-LOCAL_CFLAGS += -DBUILD_USE_ALTERNATIVE_X1_BPMP_PRIMITIVES_FOR_DEV_MEM=0
-endif
+LOCAL_EXPORT_C_INCLUDES := $(LOCAL_PATH)/include
 
-LOCAL_C_INCLUDES := $(LOCAL_PATH)/include \
+LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/src
-LOCAL_LIBRARIES := libfutils
-LOCAL_CONDITIONAL_LIBRARIES := OPTIONAL:libulog \
-				OPTIONAL:libshdata-concurrency-hooks-implem
-include $(BUILD_STATIC_LIBRARY)
+
+LOCAL_LIBRARIES := libshdata-section-lookup libfutils
+
+LOCAL_CONDITIONAL_LIBRARIES := \
+	OPTIONAL:libulog \
+	OPTIONAL:libshdata-concurrency-hooks-implem
+
+include $(BUILD_LIBRARY)
 
 ifeq ($(TARGET_CPU),$(filter %$(TARGET_CPU),tegrax1 tegrak1))
 
-# X1 version of /dev/mem lookup-table
+# X1 implementation of shd_section_lookup()
 include $(CLEAR_VARS)
-LOCAL_MODULE := libshdata-dev-mem-lookup
+LOCAL_MODULE := libshdata-section-lookup
 LOCAL_CATEGORY_PATH := libs
 LOCAL_DESCRIPTION := X1/K1 lookup table for /dev/mem
-LOCAL_SRC_FILES := src/lookup/dev_mem_lookup_x1.c
-LOCAL_C_INCLUDES := $(LOCAL_PATH)/include
+LOCAL_SRC_FILES := src/lookup/shd_lookup_x1.c
+LOCAL_C_INCLUDES := $(LOCAL_PATH)/include $(LOCAL_PATH)/src
 LOCAL_DEPENDS_HEADERS := liblk-shdata
+LOCAL_LIBRARIES := libfutils
 include $(BUILD_STATIC_LIBRARY)
 
 else
 
-# Dummy version of /dev/mem lookup-table
+# Default implementation of shd_section_lookup()
 include $(CLEAR_VARS)
-LOCAL_MODULE := libshdata-dev-mem-lookup
+LOCAL_MODULE := libshdata-section-lookup
 LOCAL_CATEGORY_PATH := libs
 LOCAL_DESCRIPTION := Dummy lookup table for /dev/mem
-LOCAL_SRC_FILES := src/lookup/shd_lookup_dummy.c
+LOCAL_SRC_FILES := src/lookup/shd_lookup_default.c
 LOCAL_C_INCLUDES := $(LOCAL_PATH)/include $(LOCAL_PATH)/src
 include $(BUILD_STATIC_LIBRARY)
 
 endif
-
-
-include $(CLEAR_VARS)
-LOCAL_MODULE := libshdata
-LOCAL_CATEGORY_PATH := libs
-LOCAL_DESCRIPTION := Shared memory low level library
-LOCAL_EXPORT_C_INCLUDES := $(LOCAL_PATH)/include
-LOCAL_WHOLE_STATIC_LIBRARIES := libshdata-core libshdata-dev-mem-lookup
-include $(BUILD_LIBRARY)
 
 # Stress test
 include $(CLEAR_VARS)
@@ -86,23 +78,6 @@ include $(BUILD_EXECUTABLE)
 
 # Unit testing
 ifdef TARGET_TEST
-
-# Mock-up version of /dev/mem lookup-table
-include $(CLEAR_VARS)
-LOCAL_MODULE := libshdata-dev-mem-lookup-tst
-LOCAL_CATEGORY_PATH := libs
-LOCAL_DESCRIPTION := Unit test version of lookup table for /dev/mem
-LOCAL_SRC_FILES := tests/lookup/dev_mem_lookup.c
-LOCAL_C_INCLUDES := $(LOCAL_PATH)/include $(LOCAL_PATH)/src
-include $(BUILD_STATIC_LIBRARY)
-
-include $(CLEAR_VARS)
-LOCAL_MODULE := libshdata-tst
-LOCAL_CATEGORY_PATH := libs
-LOCAL_DESCRIPTION := Shared memory low level library, testing version
-LOCAL_EXPORT_C_INCLUDES := $(LOCAL_PATH)/include
-LOCAL_WHOLE_STATIC_LIBRARIES := libshdata-core libshdata-dev-mem-lookup-tst
-include $(BUILD_LIBRARY)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := libshdata-concurrency-hooks-implem
@@ -126,8 +101,13 @@ LOCAL_SRC_FILES := \
 	tests/shd_test_func_read_hdr.c \
 	tests/shd_test_func_write_adv.c \
 	tests/shd_test_error.c \
-	tests/shd_test_concurrency.c
-LOCAL_LIBRARIES := libshdata-tst libcunit libshdata-concurrency-hooks-implem
+	tests/shd_test_concurrency.c \
+	tests/lookup/section_lookup.c
+
+LOCAL_C_INCLUDES := \
+	$(LOCAL_PATH)/src
+
+LOCAL_LIBRARIES := libshdata libcunit libshdata-concurrency-hooks-implem
 
 include $(BUILD_EXECUTABLE)
 

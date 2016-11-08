@@ -42,14 +42,6 @@ static int builtin_add_and_fetch(int *ptr, int value)
 	return __sync_add_and_fetch(ptr, value);
 }
 
-static int x1_bpmp_add_and_fetch(int *ptr, int value)
-{
-	__sync_synchronize();
-	*ptr += value;
-	__sync_synchronize();
-	return *ptr;
-}
-
 int shd_sync_hdr_init(struct shd_sync_hdr *sync_hdr)
 {
 	sync_hdr->write_index = -1;

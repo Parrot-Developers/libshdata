@@ -23,21 +23,87 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- * @file shd_lookup_dummy.c
+ * @file dev_lookup_x1.c
  *
- * @brief Dev-mem lookup table for dummy target
+ * @brief section lookup function for X1 target
  *
  */
 
 #include <stdint.h>
 #include <string.h>
 #include <errno.h>
+#include <futils/futils.h>
 #include "shd_section.h"
 #include "backend/shd_shm.h"
+#include "backend/shd_dev_mem.h"
+#include <liblk_shdata.h>
+
+static const struct {
+	const char *name;
+	struct shd_dev_mem_backend_param param;
+} bpmp_sections[] = {
+	{
+		.name = "imu_flight",
+		.param = {
+			.offset = LIBLK_SHD_IMU_FLIGHT_ADDR,
+		}
+	}, {
+		.name = "imu_cam",
+		.param = {
+			.offset = LIBLK_SHD_IMU_CAM_ADDR,
+		}
+	},{
+		.name = "cam_h",
+		.param = {
+			.offset = LIBLK_SHD_CAM_H_ADDR,
+		}
+	},{
+		.name = "cam_v",
+		.param = {
+			.offset = LIBLK_SHD_CAM_V_ADDR,
+		}
+	},{
+		.name = "cppm",
+		.param = {
+			.offset = LIBLK_SHD_CPPM_ADDR,
+		}
+	},{
+		.name = "ulog",
+		.param = {
+			.offset = LIBLK_SHD_ULOG_ADDR,
+		}
+	},
+};
+
+static int bpmp_add_and_fetch(int *ptr, int value)
+{
+	__sync_synchronize();
+	*ptr += value;
+	__sync_synchronize();
+	return *ptr;
+}
+
+static struct shd_sync_primitives bpmp_sync_primitives = {
+	.add_and_fetch = bpmp_add_and_fetch,
+};
 
 int shd_section_lookup(const char *blob_name,
 			struct shd_section_properties *properties)
 {
+	size_t i;
+
+	/* check if the section is stored in the memory shared with the bmbp */
+	for (i = 0; i < SIZEOF_ARRAY(bpmp_sections); i++) {
+		if (!strcmp(blob_name, bpmp_sections[i].name)) {
+			properties->backend = &shd_dev_mem_backend;
+			properties->backend_param = &bpmp_sections[i].param;
+			properties->primitives = bpmp_sync_primitives;
+
+			return 0;
+		}
+	}
+
+	/*  on other cases use default backend (shm backend) */
 	properties->backend = &shd_shm_backend;
 	properties->backend_param = NULL;
 	shd_sync_primitives_set_builtin(&properties->primitives);
