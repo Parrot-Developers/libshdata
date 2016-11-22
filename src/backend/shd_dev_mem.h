@@ -36,6 +36,7 @@
 
 struct shd_dev_mem_backend_param {
 	uintptr_t offset;
+	int open_flags;
 };
 
 extern const struct shd_section_backend shd_dev_mem_backend;

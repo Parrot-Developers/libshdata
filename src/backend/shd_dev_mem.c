@@ -93,9 +93,10 @@ static int shd_dev_mem_create(const char *blob_name,
 {
 	const struct shd_dev_mem_backend_param *param = raw_param;
 	struct shd_dev_mem_priv *self;
+	int flags = O_EXCL | O_RDWR | param->open_flags;
 	int ret;
 
-	ret = open_internal(param, O_EXCL | O_RDWR, &self);
+	ret = open_internal(param, flags, &self);
 	if (ret < 0)
 		return ret;
 
@@ -114,9 +115,10 @@ static int shd_dev_mem_open(const char *blob_name,
 {
 	const struct shd_dev_mem_backend_param *param = raw_param;
 	struct shd_dev_mem_priv *self;
+	int flags = O_EXCL | O_RDONLY | param->open_flags;
 	int ret;
 
-	ret = open_internal(param, O_EXCL | O_RDONLY, &self);
+	ret = open_internal(param, flags, &self);
 	if (ret < 0)
 		return ret;
 
