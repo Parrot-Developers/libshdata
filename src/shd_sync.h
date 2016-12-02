@@ -56,15 +56,15 @@ struct shd_sync_hdr {
 	struct shd_revision revision;
 	/* index of currently written buffer slot */
 	int write_index;
-	/* TID of the current writer : used for synchronization purposes */
-	int wtid;
+	/* Number of writes currently going on in the section : in nominal
+	 * function, it should always only be 0 or 1 */
+	int nb_ongoing_writes;
 };
 
 /*
  * @brief Synchronization primitives required by the library
  */
 struct shd_sync_primitives {
-	bool (*compare_and_swap) (int *ptr, int oldval, int newval);
 	int (*add_and_fetch) (int *ptr, int value);
 };
 
@@ -81,9 +81,6 @@ struct shd_sync_ctx {
 	/* index of the buffer slot that was last written (-1 if no write
 	 * operation has occurred yet) */
 	int prev_index;
-	/* TID of the current writer (-1 means there is no operation in
-	 * progress) */
-	int wtid;
 	/* number of writes to the reference memory slot as last seen by the
 	 * caller */
 	int nb_writes;
@@ -135,23 +132,23 @@ struct shd_sync_ctx *shd_sync_ctx_new(enum shd_section_type section_type);
 int shd_sync_ctx_destroy(struct shd_sync_ctx *ctx);
 
 /*
- * @brief Update current writer
+ * @brief Start writing session
  *
  * @param[in,out] ctx : current synchronization context
  * @param[in,out] hdr : pointer to the synchronization part of the section
  * header
- * @param[in] tid : thread ID of the writer
  *
  * @return : 0 in case of success,
- *           -EALREADY if an operation from the same thread is already in
- *           progress
+ *           -EALREADY if an operation from the same context is already in
+ *           progress (most likely meaning that an API function was called
+ *           more than once)
  *           -EPERM if another thread is currently writing on this memory
- *           section,
+ *           section (which indicates two producers are trying to write in the
+ *           same section)
  */
 
-int shd_sync_update_writer(struct shd_sync_ctx *ctx,
-				struct shd_sync_hdr *hdr,
-				int tid);
+int shd_sync_start_write_session(struct shd_sync_ctx *ctx,
+				 struct shd_sync_hdr *hdr);
 
 /*
  * @brief Start write session on a new sample
@@ -168,7 +165,7 @@ int shd_sync_update_writer(struct shd_sync_ctx *ctx,
  *           -EFAULT if at least one write occurred outside of the current
  * context, indicating a severe fault
  */
-int shd_sync_start_write_session(struct shd_sync_ctx *ctx,
+int shd_sync_start_sample_write(struct shd_sync_ctx *ctx,
 				struct shd_sync_hdr *hdr,
 				struct shd_sync_sample *samp,
 				const struct shd_data_section_desc *desc);

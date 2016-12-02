@@ -112,7 +112,7 @@
 extern "C" {
 #endif
 
-#define SHD_VERSION_MAJOR 5
+#define SHD_VERSION_MAJOR 6
 #define SHD_VERSION_MINOR 0
 #define SHD_MAGIC_NUMBER 0x65756821
 

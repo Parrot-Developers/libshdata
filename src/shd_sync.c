@@ -36,25 +36,9 @@
 #include "shd_data.h"
 #include "shd_sync.h"
 
-static bool builtin_compare_and_swap(int *ptr, int oldval, int newval)
-{
-	return __sync_bool_compare_and_swap(ptr, oldval, newval);
-}
 static int builtin_add_and_fetch(int *ptr, int value)
 {
 	return __sync_add_and_fetch(ptr, value);
-}
-
-static bool x1_bpmp_compare_and_swap(int *ptr, int oldval, int newval)
-{
-	__sync_synchronize();
-	if (*ptr == oldval) {
-		*ptr = newval;
-		__sync_synchronize();
-		return true;
-	} else {
-		return false;
-	}
 }
 
 static int x1_bpmp_add_and_fetch(int *ptr, int value)
@@ -72,13 +56,10 @@ static int init_primitives(struct shd_sync_primitives *primitives,
 		return -EINVAL;
 
 	if (BUILD_USE_ALTERNATIVE_X1_BPMP_PRIMITIVES_FOR_DEV_MEM
-			&& section_type == SHD_SECTION_DEV_MEM) {
-		primitives->compare_and_swap = x1_bpmp_compare_and_swap;
+			&& section_type == SHD_SECTION_DEV_MEM)
 		primitives->add_and_fetch = x1_bpmp_add_and_fetch;
-	} else {
-		primitives->compare_and_swap = builtin_compare_and_swap;
+	else
 		primitives->add_and_fetch = builtin_add_and_fetch;
-	}
 
 	return 0;
 }
@@ -86,7 +67,7 @@ static int init_primitives(struct shd_sync_primitives *primitives,
 int shd_sync_hdr_init(struct shd_sync_hdr *sync_hdr)
 {
 	sync_hdr->write_index = -1;
-	sync_hdr->wtid = -1;
+	sync_hdr->nb_ongoing_writes = 0;
 
 	return 0;
 }
@@ -101,7 +82,6 @@ struct shd_sync_ctx *shd_sync_ctx_new(enum shd_section_type section_type)
 
 	ctx->index = -1;
 	ctx->prev_index = -1;
-	ctx->wtid = -1;
 
 	if (init_primitives(&ctx->primitives, section_type) < 0) {
 		free(ctx);
@@ -119,24 +99,28 @@ int shd_sync_ctx_destroy(struct shd_sync_ctx *ctx)
 	return 0;
 }
 
-int shd_sync_update_writer(struct shd_sync_ctx *ctx,
-				struct shd_sync_hdr *hdr,
-				int tid)
+int shd_sync_start_write_session(struct shd_sync_ctx *ctx,
+				 struct shd_sync_hdr *hdr)
 {
-	if (ctx->primitives.compare_and_swap(&hdr->wtid, -1, tid)) {
-		ctx->wtid = tid;
-		return 0;
-	} else {
+	/* Number of writes currently going on is atomically incremented, and
+	 * its new value should be 1 (since only one write can be in progress
+	 * at a given moment) */
+	if (ctx->primitives.add_and_fetch(&hdr->nb_ongoing_writes, 1) != 1) {
 		if (ctx->index != -1) {
+			ULOGW("A write is already in progress within "
+					"this producer");
 			return -EALREADY;
 		} else {
-			ULOGW("Atomic operation went wrong");
+			ULOGE("Abnormal write already in progress by another "
+					"producer");
 			return -EPERM;
 		}
 	}
+
+	return 0;
 }
 
-int shd_sync_start_write_session(struct shd_sync_ctx *ctx,
+int shd_sync_start_sample_write(struct shd_sync_ctx *ctx,
 				struct shd_sync_hdr *hdr,
 				struct shd_sync_sample *samp,
 				const struct shd_data_section_desc *desc)
@@ -147,8 +131,6 @@ int shd_sync_start_write_session(struct shd_sync_ctx *ctx,
 		return -EINVAL;
 	if (ctx->index != -1)
 		return -EALREADY;
-	if (ctx->wtid == -1)
-		return -EPERM;
 
 	/* Invalidate sample */
 	ctx->primitives.add_and_fetch(&samp->nb_writes, 1);
@@ -182,7 +164,7 @@ int shd_sync_end_write_session(struct shd_sync_ctx *ctx,
 
 	ULOGD("End of write on sample at index : %d", ctx->index);
 	hdr->write_index = ctx->index;
-	hdr->wtid = -1;
+	hdr->nb_ongoing_writes = 0;
 	ctx->prev_index = ctx->index;
 	ctx->index = -1;
 	return 0;

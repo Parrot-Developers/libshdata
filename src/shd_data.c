@@ -76,12 +76,9 @@ int shd_data_reserve_write(struct shd_ctx *ctx)
 	int ret;
 	int index;
 	struct shd_sample *curr_sample;
-	pid_t tid = syscall(SYS_gettid);
 
-	/* Writer TID must be updated as soon as possible */
-	ret = shd_sync_update_writer(ctx->sync_ctx,
-					ctx->sect_mmap->sync_top,
-					tid);
+	ret = shd_sync_start_write_session(ctx->sync_ctx,
+						ctx->sect_mmap->sync_top);
 
 	if (ret < 0)
 		return ret;
@@ -91,7 +88,7 @@ int shd_data_reserve_write(struct shd_ctx *ctx)
 	curr_sample = shd_data_get_sample_ptr(ctx->desc,
 						index);
 
-	ret = shd_sync_start_write_session(ctx->sync_ctx,
+	ret = shd_sync_start_sample_write(ctx->sync_ctx,
 						ctx->sect_mmap->sync_top,
 						&curr_sample->sync,
 						ctx->desc);
