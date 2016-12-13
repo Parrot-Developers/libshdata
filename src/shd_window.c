@@ -67,6 +67,9 @@ int shd_window_set(struct shd_window *window,
 	case SHD_LATEST:
 		ref_idx = ctx.t_index;
 		break;
+	case SHD_OLDEST:
+		ref_idx = shd_search_oldest(desc, &ctx);
+		break;
 	case SHD_CLOSEST:
 		ref_idx = shd_search_closest_match(desc, &search->date,
 						&ctx, hint);

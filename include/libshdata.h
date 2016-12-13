@@ -151,7 +151,11 @@ enum shd_search_method_t {
 	/* Sample whose timestamp is immediately after the given date */
 	SHD_FIRST_AFTER,
 	/* Sample whose timestamp is immediately before the given date */
-	SHD_FIRST_BEFORE
+	SHD_FIRST_BEFORE,
+	/* Oldest valid sample in the section (with a little security margin
+	 * that ensures the selected sample won't be overwritten right
+	 * away) */
+	SHD_OLDEST
 };
 
 enum shd_ref_sample_search_hint {

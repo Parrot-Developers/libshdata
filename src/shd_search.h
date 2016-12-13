@@ -49,6 +49,38 @@ struct search_ctx {
 char *shd_search_method_to_str(enum shd_search_method_t method);
 
 /*
+ * @brief Get the max depth for a search within the section
+ *
+ * @details If the section has been recently created and hasn't looped at least
+ * once through the whole buffer, not all the samples are valid ; this function
+ * allows to limit the scope of the search only to the valid samples
+ *
+ * @param[in] desc : pointer to section description
+ * @param[in] ctx : search context
+ *
+ * @return max possible depth, varying between 0 if no sample has been produced
+ * and the total number of samples
+ */
+unsigned int shd_search_get_max_depth(const struct shd_data_section_desc *desc,
+					const struct search_ctx *ctx);
+
+/*
+ * @brief Get oldest sample in the section
+ *
+ * @details : if the section hasn't been written in full at least once, the
+ * returned sample is indeed the oldest within the section. Else, it is the
+ * second-oldest (to minimize the chances that the returned sample is
+ * overwritten during the next read)
+ *
+ * @param[in] desc : description of the section
+ * @param[in] ctx : context of the search
+ *
+ * @return index of the oldest sample if applicable,
+ *         -1 else
+ */
+int shd_search_oldest(const struct shd_data_section_desc *desc,
+				 const struct search_ctx *ctx);
+/*
  * @brief Search for the sample whose timestamp is right after a given date
  *
  * @param[in] desc : description of the section

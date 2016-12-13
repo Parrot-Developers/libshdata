@@ -37,21 +37,8 @@
 #include "shd_private.h"
 #include "shd_search.h"
 
-/*
- * @brief Get the max depth for a search within the section
- *
- * @details If the section has been recently created and hasn't looped at least
- * once through the whole buffer, not all the samples are valid ; this function
- * allows to limit the scope of the search only to the valid samples
- *
- * @param[in] desc : pointer to section description
- * @param[in] ctx : search context
- *
- * @return max possible depth if applicable,
- *         -1 if all the samples are invalid
- */
-static int get_max_search_depth(const struct shd_data_section_desc *desc,
-				const struct search_ctx *ctx)
+unsigned int shd_search_get_max_depth(const struct shd_data_section_desc *desc,
+					const struct search_ctx *ctx)
 {
 	unsigned int depth;
 
@@ -59,7 +46,7 @@ static int get_max_search_depth(const struct shd_data_section_desc *desc,
 	 * whole section has been written at least once, and the whole
 	 * section is eligible for research */
 	if (ctx->nb_writes_top > 0)
-		return desc->nb_samples - 1;
+		return desc->nb_samples;
 
 	/* Else, we run through the whole buffer and stop as soon as a sample
 	 * is invalid */
@@ -71,7 +58,7 @@ static int get_max_search_depth(const struct shd_data_section_desc *desc,
 			break;
 	}
 
-	return depth - 1;
+	return depth;
 }
 
 static bool search_reference_sample_naive(
@@ -83,12 +70,12 @@ static bool search_reference_sample_naive(
 {
 	bool found_ref = false;
 	struct shd_sample *curr;
-	int max_depth = get_max_search_depth(desc, ctx);
+	int max_depth = shd_search_get_max_depth(desc, ctx);
 	int searched = 0;
 
 	*m_index = ctx->t_index;
 
-	while (searched <= max_depth && !found_ref) {
+	while (searched < max_depth && !found_ref) {
 		curr = shd_data_get_sample_ptr(desc, *m_index);
 		if (shd_sample_timestamp_cmp(curr, *date) < 0)
 			found_ref = true;
@@ -114,7 +101,7 @@ static bool search_reference_sample_binary(
 
 	/* imin, imax, imid are relative index in window */
 	imin = 0;
-	max_depth = get_max_search_depth(desc, ctx) + 1;
+	max_depth = shd_search_get_max_depth(desc, ctx);
 	imax = max_depth - 1;
 
 	*s_searched = 0;
@@ -206,6 +193,7 @@ char *shd_search_method_to_str(enum shd_search_method_t method)
 {
 	char *str[] = {
 		[SHD_LATEST] = "SHD_LATEST",
+		[SHD_OLDEST] = "SHD_OLDEST",
 		[SHD_CLOSEST] = "SHD_CLOSEST",
 		[SHD_FIRST_AFTER] = "SHD_FIRST_AFTER",
 		[SHD_FIRST_BEFORE] = "SHD_FIRST_BEFORE",
@@ -214,6 +202,22 @@ char *shd_search_method_to_str(enum shd_search_method_t method)
 		return str[method];
 	else
 		return "Unknown";
+}
+
+int shd_search_oldest(const struct shd_data_section_desc *desc,
+				 const struct search_ctx *ctx)
+{
+	int ret_index = -1;
+	unsigned int max_depth = shd_search_get_max_depth(desc, ctx);
+
+	if (max_depth == desc->nb_samples)
+		ret_index = index_n_after(ctx->t_index, 2, desc->nb_samples);
+	else
+		ret_index = index_n_before(ctx->t_index,
+				 max_depth - 1,
+				 desc->nb_samples);
+
+	return ret_index;
 }
 
 int shd_search_first_match_after(const struct shd_data_section_desc *desc,

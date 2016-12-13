@@ -125,6 +125,120 @@ static void test_func_basic_read_from_sample_latest(void)
 	CU_ASSERT_EQUAL(ret, 0);
 }
 
+
+static void test_func_basic_read_from_sample_oldest(void)
+{
+	struct shd_ctx *ctx_prod, *ctx_cons;
+	int ret, index;
+	struct prod_blob read_blob;
+	struct shd_sample_metadata sample_meta = METADATA_INIT;
+	struct shd_sample_metadata oldest_sample_meta = METADATA_INIT;
+	struct shd_sample_search search = {
+		.nb_values_after_date = 0,
+		.nb_values_before_date = 0,
+		.method = SHD_OLDEST
+	};
+	struct shd_revision *rev;
+	struct shd_quantity_sample blob_samp[1] = {
+		{ .ptr = &read_blob, .size = sizeof(read_blob) }
+	};
+
+	/* Create a producer and a consumer context to play with */
+	ctx_prod = shd_create(BLOB_NAME("basic-select-sample-oldest"), NULL,
+				&s_hdr_info,
+				&s_metadata_hdr);
+	CU_ASSERT_PTR_NOT_NULL_FATAL(ctx_prod);
+	ctx_cons = shd_open(BLOB_NAME("basic-select-sample-oldest"),
+			NULL, &rev);
+	CU_ASSERT_PTR_NOT_NULL_FATAL(ctx_cons);
+
+	if (time_step(&sample_meta.ts) < 0)
+		CU_FAIL_FATAL("Could not get time");
+	if (time_step(&search.date) < 0)
+		CU_FAIL_FATAL("Could not get time");
+	if (time_step(&oldest_sample_meta.ts) < 0)
+		CU_FAIL_FATAL("Could not get time");
+
+	/* Try to read a sample before any has been produced : this should
+	 * fail */
+	ret = shd_read_from_sample(ctx_cons, 0, &search, NULL,
+					blob_samp);
+	CU_ASSERT_EQUAL(ret, -EAGAIN);
+
+	/* Produce at least one sample in the shared memory section */
+	ret = shd_write_new_blob(ctx_prod,
+					&s_blob,
+					sizeof(s_blob),
+					&sample_meta);
+	CU_ASSERT_EQUAL_FATAL(ret, 0);
+
+	/* Read the whole blob */
+	ret = shd_read_from_sample(ctx_cons, 0, &search, NULL,
+					blob_samp);
+	CU_ASSERT_TRUE(ret > 0);
+	CU_ASSERT_TRUE(time_is_equal(&blob_samp[0].meta.ts,
+					&oldest_sample_meta.ts));
+	CU_ASSERT_TRUE(time_is_equal(&blob_samp[0].meta.exp,
+					&oldest_sample_meta.exp));
+	ret = shd_end_read(ctx_cons, rev);
+	CU_ASSERT_EQUAL(ret, 0);
+
+	/* Keep on writing new samples until the whole section is written,
+	 * we should always get the first sample ever produced */
+	for (index = 0; index < NUMBER_OF_SAMPLES - 2; index++) {
+		if (time_step(&sample_meta.ts) < 0)
+			CU_FAIL_FATAL("Could not get time");
+		ret = shd_write_new_blob(ctx_prod,
+						&s_blob,
+						sizeof(s_blob),
+						&sample_meta);
+		CU_ASSERT_EQUAL_FATAL(ret, 0);
+
+		ret = shd_read_from_sample(ctx_cons, 0, &search, NULL,
+						blob_samp);
+		CU_ASSERT_TRUE(ret > 0);
+
+		CU_ASSERT_TRUE(time_is_equal(&blob_samp[0].meta.ts,
+						&oldest_sample_meta.ts));
+		CU_ASSERT_TRUE(time_is_equal(&blob_samp[0].meta.exp,
+						&oldest_sample_meta.exp));
+		ret = shd_end_read(ctx_cons, rev);
+		CU_ASSERT_EQUAL(ret, 0);
+	}
+
+	/* Now that the section has been written in full, we should always
+	 * return the second oldest sample */
+	for (index = 0; index < NUMBER_OF_SAMPLES; index++) {
+		if (time_step(&sample_meta.ts) < 0)
+			CU_FAIL_FATAL("Could not get time");
+		if (time_step(&oldest_sample_meta.ts) < 0)
+			CU_FAIL_FATAL("Could not get time");
+		ret = shd_write_new_blob(ctx_prod,
+						&s_blob,
+						sizeof(s_blob),
+						&sample_meta);
+		CU_ASSERT_EQUAL_FATAL(ret, 0);
+
+		ret = shd_read_from_sample(ctx_cons, 0, &search, NULL,
+						blob_samp);
+		CU_ASSERT_TRUE(ret > 0);
+
+		CU_ASSERT_TRUE(time_is_equal(&blob_samp[0].meta.ts,
+						&oldest_sample_meta.ts));
+		CU_ASSERT_TRUE(time_is_equal(&blob_samp[0].meta.exp,
+						&oldest_sample_meta.exp));
+		ret = shd_end_read(ctx_cons, rev);
+		CU_ASSERT_EQUAL(ret, 0);
+	}
+
+	/* Close should unfold normally */
+	ret = shd_close(ctx_prod, NULL);
+	CU_ASSERT_EQUAL(ret, 0);
+	ret = shd_close(ctx_cons, rev);
+	CU_ASSERT_EQUAL(ret, 0);
+}
+
+
 static void test_func_basic_read_from_sample_first_after(void)
 {
 	struct shd_ctx *ctx_prod, *ctx_cons;
@@ -1044,6 +1158,8 @@ static void test_func_basic_read_change_blob_structure(void)
 CU_TestInfo s_func_basic_read_tests[] = {
 	{(char *)"read from latest sample",
 		&test_func_basic_read_from_sample_latest},
+	{(char *)"read from oldest sample",
+		&test_func_basic_read_from_sample_oldest},
 	{(char *)"read from sample by \"first after\" search",
 		&test_func_basic_read_from_sample_first_after},
 	{(char *)"read from sample by \"first before\" search",
