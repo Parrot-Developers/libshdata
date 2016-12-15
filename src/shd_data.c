@@ -34,7 +34,6 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <unistd.h>
-#include <sys/syscall.h>		/* for syscall */
 #include <string.h>			/* for memcpy function */
 #include <stdlib.h>			/* For memory allocation functions */
 #include <errno.h>
