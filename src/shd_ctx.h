@@ -77,16 +77,13 @@ struct shd_ctx *shd_ctx_new(struct shd_section_id *id, const char *blob_name);
  * @param[in] ctx : context to m'map
  * @param[in] hdr_info : pointer to the header structure that contains all info
  * regarding the shared memory section
- * @param[in] prot : memory protection that should be used for that context
- * (PROT_READ or PROT_WRITE)
  *
  * @return : 0 in case of success,
  *           -EINVAL if ctx is NULL
  *           -EFAULT if a fault is detected while m'maping
  */
 int shd_ctx_mmap(struct shd_ctx *ctx,
-			const struct shd_hdr_user_info *hdr_info,
-			enum shd_map_prot prot);
+			const struct shd_hdr_user_info *hdr_info);
 
 /*
  * @brief Destroys a shared memory context

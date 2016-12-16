@@ -45,45 +45,15 @@ struct shd_dev_mem_priv {
 	int fd;
 	uintptr_t offset;
 	struct shd_section_addr addr;
+	int writable;
+	size_t creation_size;
 };
 
-static int get_prot_flags(enum shd_map_prot prot)
-{
-	switch (prot) {
-	case SHD_MAP_PROT_READ:
-		return PROT_READ;
-	case SHD_MAP_PROT_WRITE:
-		return PROT_WRITE;
-	case SHD_MAP_PROT_READ_WRITE:
-		return PROT_READ | PROT_WRITE;
-	default:
-		ULOGW("Invalid protection flag %d", prot);
-		return 0;
-	}
-}
-
-static int get_open_flags(enum shd_section_operation op)
-{
-	switch (op) {
-	case SHD_OPERATION_CREATE:
-		return O_CREAT | O_EXCL | O_RDWR;
-	case SHD_OPERATION_OPEN_RD:
-		return O_RDONLY;
-	case SHD_OPERATION_OPEN_WR:
-		return O_CREAT | O_RDWR;
-	default:
-		return -EINVAL;
-	}
-}
-
-static int shd_dev_mem_open(const char *blob_name,
-			enum shd_section_operation op,
-			const void *raw_param,
-			void **priv)
+static int open_internal(const struct shd_dev_mem_backend_param *param,
+			int flags,
+			struct shd_dev_mem_priv **priv)
 {
 	struct shd_dev_mem_priv *self;
-	const struct shd_dev_mem_backend_param *param = raw_param;
-	int flags = get_open_flags(op);
 	int ret;
 
 	self = calloc(1, sizeof(*self));
@@ -113,6 +83,48 @@ clear:
 	free(self);
 
 	return ret;
+}
+
+static int shd_dev_mem_create(const char *blob_name,
+		size_t size,
+		const void *raw_param,
+		void **priv,
+		bool *first_creation)
+{
+	const struct shd_dev_mem_backend_param *param = raw_param;
+	struct shd_dev_mem_priv *self;
+	int ret;
+
+	ret = open_internal(param, O_EXCL | O_RDWR, &self);
+	if (ret < 0)
+		return ret;
+
+	self->writable = 1;
+	self->creation_size = size;
+
+	*priv = self;
+	*first_creation = false;
+
+	return 0;
+}
+
+static int shd_dev_mem_open(const char *blob_name,
+			const void *raw_param,
+			void **priv)
+{
+	const struct shd_dev_mem_backend_param *param = raw_param;
+	struct shd_dev_mem_priv *self;
+	int ret;
+
+	ret = open_internal(param, O_EXCL | O_RDONLY, &self);
+	if (ret < 0)
+		return ret;
+
+	self->writable = 0;
+
+	*priv = self;
+
+	return 0;
 }
 
 static int shd_dev_mem_close(void *priv)
@@ -147,14 +159,14 @@ static int shd_dev_mem_read_header(struct shd_hdr *hdr, void *priv)
 	return 0;
 }
 
-static int shd_dev_mem_get_section(size_t size, enum shd_map_prot prot,
+static int shd_dev_mem_get_section(size_t size,
 				void **out_ptr, void *priv)
 {
 	struct shd_dev_mem_priv *self = priv;
 	void *ptr;
 
 	ptr = mmap(0, size,
-			get_prot_flags(prot),
+			self->writable ? PROT_WRITE : PROT_READ,
 			MAP_SHARED,
 			self->fd,
 			self->offset);
@@ -169,7 +181,7 @@ static int shd_dev_mem_get_section(size_t size, enum shd_map_prot prot,
 	return 0;
 }
 
-static int shd_dev_mem_resize(size_t size, void *priv)
+static int shd_dev_mem_resize(void *priv)
 {
 	return 0;
 }
@@ -185,7 +197,7 @@ static int shd_dev_mem_unlock(void *priv)
 }
 
 const struct shd_section_backend shd_dev_mem_backend = {
-	.type = SHD_SECTION_DEV_MEM,
+	.create = shd_dev_mem_create,
 	.open = shd_dev_mem_open,
 	.close = shd_dev_mem_close,
 	.hdr_read = shd_dev_mem_read_header,

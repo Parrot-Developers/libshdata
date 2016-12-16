@@ -44,12 +44,6 @@
 #include "shd_data.h"
 #include "shd_utils.h"
 
-/* backends */
-#include "backend/shd_shm.h"
-#include "backend/shd_dev_mem.h"
-
-#define SHD_SECTION_MODE		0666
-
 struct shd_section_mapping {
 	ptrdiff_t metadata_offset;
 	size_t metadata_size;
@@ -59,8 +53,6 @@ struct shd_section_mapping {
 	ptrdiff_t hdr_offset;
 	ptrdiff_t sync_offset;
 };
-
-static int check_blob_name(const char *blob_name);
 
 static void get_offsets(const struct shd_hdr_user_info *hdr_info,
 			struct shd_section_mapping *offsets)
@@ -95,49 +87,53 @@ static struct shd_section *get_mmap(char *ptr,
 	return map;
 }
 
-static int from_blob_to_section(const char *blob_name,
-				const char *shd_root,
+static int init_section_infos(const char *blob_name,
 				struct shd_section_id *id,
-				enum shd_section_operation op)
+				struct shd_section_properties *properties)
 {
-	struct shd_section_properties properties;
 	int ret;
 
 	if (blob_name == NULL || strchr(blob_name, '/') != NULL)
 		return -EINVAL;
 
-	ret = shd_section_lookup(blob_name, &properties);
+	ret = shd_section_lookup(blob_name, properties);
 	if (ret < 0) {
 		ULOGE("blob '%s' not found", blob_name);
 		return -ENOENT;
 	}
 
-	id->backend = *properties.backend;
-	id->primitives = properties.primitives;
+	id->backend = *properties->backend;
+	id->primitives = properties->primitives;
 
-	return (*id->backend.open) (blob_name, op,
-			properties.backend_param, &id->instance);
+	return 0;
 }
 
-int shd_section_new(const char *blob_name, const char *shd_root,
-			struct shd_section_id *id)
+int shd_section_create(const char *blob_name, size_t size,
+			struct shd_section_id *id, bool *first_creation)
 {
-	return from_blob_to_section(blob_name, shd_root,
-					id, SHD_OPERATION_CREATE);
+	struct shd_section_properties properties;
+	int ret;
+
+	ret = init_section_infos(blob_name, id, &properties);
+	if (ret < 0)
+		return ret;
+
+	return (*id->backend.create) (blob_name, size, properties.backend_param,
+			&id->instance, first_creation);
 }
 
-int shd_section_open(const char *blob_name, const char *shd_root,
+int shd_section_open(const char *blob_name,
 			struct shd_section_id *id)
 {
-	return from_blob_to_section(blob_name, shd_root,
-					id, SHD_OPERATION_OPEN_WR);
-}
+	struct shd_section_properties properties;
+	int ret;
 
-int shd_section_get(const char *blob_name, const char *shd_root,
-			struct shd_section_id *id)
-{
-	return from_blob_to_section(blob_name, shd_root,
-					id, SHD_OPERATION_OPEN_RD);
+	ret = init_section_infos(blob_name, id, &properties);
+	if (ret < 0)
+		return ret;
+
+	return (*id->backend.open) (blob_name, properties.backend_param,
+			&id->instance);
 }
 
 int shd_section_lock(const struct shd_section_id *id)
@@ -150,9 +146,9 @@ int shd_section_unlock(const struct shd_section_id *id)
 	return (*id->backend.section_unlock) (id->instance);
 }
 
-int shd_section_resize(const struct shd_section_id *id, size_t size)
+int shd_section_resize(const struct shd_section_id *id)
 {
-	return (*id->backend.section_resize) (size, id->instance);
+	return (*id->backend.section_resize) (id->instance);
 }
 
 int shd_section_free(const struct shd_section_id *id)
@@ -161,8 +157,7 @@ int shd_section_free(const struct shd_section_id *id)
 }
 
 struct shd_section *shd_section_mapping_new(const struct shd_section_id *id,
-			const struct shd_hdr_user_info *hdr_info,
-			enum shd_map_prot prot)
+			const struct shd_hdr_user_info *hdr_info)
 {
 	struct shd_section *map = NULL;
 	struct shd_hdr_user_info src_hdr_user;
@@ -183,7 +178,7 @@ struct shd_section *shd_section_mapping_new(const struct shd_section_id *id,
 	get_offsets(&src_hdr_user, &offsets);
 
 	ret = (*id->backend.get_section_start) (offsets.total_size,
-						prot, &ptr, id->instance);
+						&ptr, id->instance);
 	if (ret < 0) {
 		ULOGW("Could not allocate memory : %s", strerror(-ret));
 		return NULL;

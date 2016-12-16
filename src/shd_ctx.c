@@ -90,13 +90,12 @@ error:
 }
 
 int shd_ctx_mmap(struct shd_ctx *ctx,
-			const struct shd_hdr_user_info *hdr_info,
-			enum shd_map_prot prot)
+			const struct shd_hdr_user_info *hdr_info)
 {
 	if (ctx == NULL)
 		return -EINVAL;
 
-	ctx->sect_mmap = shd_section_mapping_new(&ctx->id, hdr_info, prot);
+	ctx->sect_mmap = shd_section_mapping_new(&ctx->id, hdr_info);
 	if (ctx->sect_mmap == NULL)
 		return -EFAULT;
 	ctx->desc = shd_data_section_desc_new(ctx, hdr_info);

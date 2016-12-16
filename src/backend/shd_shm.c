@@ -50,36 +50,9 @@
 struct shd_shm_priv {
 	int fd;
 	struct shd_section_addr addr;
+	int writable;
+	size_t creation_size;
 };
-
-static int get_prot_flags(enum shd_map_prot prot)
-{
-	switch (prot) {
-	case SHD_MAP_PROT_READ:
-		return PROT_READ;
-	case SHD_MAP_PROT_WRITE:
-		return PROT_WRITE;
-	case SHD_MAP_PROT_READ_WRITE:
-		return PROT_READ | PROT_WRITE;
-	default:
-		ULOGW("Invalid protection flag %d", prot);
-		return 0;
-	}
-}
-
-static int get_open_flags(enum shd_section_operation op)
-{
-	switch (op) {
-	case SHD_OPERATION_CREATE:
-		return O_CREAT | O_EXCL | O_RDWR;
-	case SHD_OPERATION_OPEN_RD:
-		return O_RDONLY;
-	case SHD_OPERATION_OPEN_WR:
-		return O_CREAT | O_RDWR;
-	default:
-		return -EINVAL;
-	}
-}
 
 static int shd_shm_open_internal(struct shd_shm_priv *self,
 		const char *blob_name,
@@ -143,14 +116,12 @@ clear_path:
 	return ret;
 }
 
-static int shd_shm_open(const char *blob_name,
-			enum shd_section_operation op,
-			const void *raw_param,
-			void **priv)
+static int open_internal(const char *blob_name,
+			const struct shd_shm_backend_param *param,
+			int flags,
+			struct shd_shm_priv **priv)
 {
-	const struct shd_shm_backend_param *param = raw_param;
 	struct shd_shm_priv *self;
-	int flags = get_open_flags(op);
 	int mode = 0666;
 	int ret;
 
@@ -177,6 +148,56 @@ error:
 	free(self);
 
 	return ret;
+}
+
+static int shd_shm_create(const char *blob_name,
+		size_t size,
+		const void *raw_param,
+		void **priv,
+		bool *first_creation)
+{
+	const struct shd_shm_backend_param *param = raw_param;
+	struct shd_shm_priv *self;
+	int ret;
+
+	ret = open_internal(blob_name, param, O_CREAT | O_EXCL | O_RDWR, &self);
+	if (ret == 0) {
+		*first_creation = true;
+	} else if (ret == -EEXIST) {
+		ret = open_internal(blob_name, param, O_EXCL | O_RDWR, &self);
+		if (ret < 0)
+			return ret;
+
+		*first_creation = false;
+	} else {
+		return ret;
+	}
+
+	self->writable = 1;
+	self->creation_size = size;
+
+	*priv = self;
+
+	return 0;
+}
+
+static int shd_shm_open(const char *blob_name,
+			const void *raw_param,
+			void **priv)
+{
+	const struct shd_shm_backend_param *param = raw_param;
+	struct shd_shm_priv *self;
+	int ret;
+
+	ret = open_internal(blob_name, param, O_EXCL | O_RDONLY, &self);
+	if (ret < 0)
+		return ret;
+
+	self->writable = 0;
+
+	*priv = self;
+
+	return 0;
 }
 
 static int shd_shm_close(void *priv)
@@ -221,7 +242,7 @@ static int shd_shm_read_header(struct shd_hdr *hdr, void *priv)
 	return 0;
 }
 
-static int shd_shm_get_section(size_t size, enum shd_map_prot prot,
+static int shd_shm_get_section(size_t size,
 				void **out_ptr, void *priv)
 {
 	struct shd_shm_priv *self = priv;
@@ -230,7 +251,7 @@ static int shd_shm_get_section(size_t size, enum shd_map_prot prot,
 
 	ptr = mmap(0,
 		   size,
-		   get_prot_flags(prot),
+		   self->writable ? PROT_WRITE : PROT_READ,
 		   MAP_SHARED,
 		   self->fd,
 		   0);
@@ -248,11 +269,11 @@ static int shd_shm_get_section(size_t size, enum shd_map_prot prot,
 	return 0;
 }
 
-static int shd_shm_resize(size_t size, void *priv)
+static int shd_shm_resize(void *priv)
 {
 	struct shd_shm_priv *self = priv;
 
-	return ftruncate(self->fd, size);
+	return ftruncate(self->fd, self->creation_size);
 }
 
 static int shd_shm_lock(void *priv)
@@ -270,7 +291,7 @@ static int shd_shm_unlock(void *priv)
 }
 
 const struct shd_section_backend shd_shm_backend = {
-	.type = SHD_SECTION_DEV_SHM,
+	.create = shd_shm_create,
 	.open = shd_shm_open,
 	.close = shd_shm_close,
 	.hdr_read = shd_shm_read_header,

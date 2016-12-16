@@ -57,8 +57,9 @@ struct shd_ctx *shd_create(const char *blob_name, const char *shd_root,
 	struct shd_ctx *ctx = NULL;
 	int ret = -1;
 	int rev_nb;
-	bool first_creation = true;
+	bool first_creation;
 	struct shd_section_id id;
+	size_t section_size;
 
 	if (blob_name == NULL
 		|| hdr_info == NULL
@@ -67,15 +68,9 @@ struct shd_ctx *shd_create(const char *blob_name, const char *shd_root,
 		goto error;
 	}
 
-	/* Try to open shared memory section as if it were new. If it doesn't
-	 * work, re-try to open it in non-exclusive mode. */
-	ret = shd_section_new(blob_name, shd_root, &id);
-	if (ret == -EEXIST) {
-		ret = shd_section_open(blob_name, shd_root, &id);
-		if (ret >= 0)
-			first_creation = false;
-	}
+	section_size = shd_section_get_total_size(hdr_info);
 
+	ret = shd_section_create(blob_name, section_size, &id, &first_creation);
 	if (ret < 0) {
 		ULOGE("Could not add new shared memory section \"%s\" : %s",
 				blob_name,
@@ -100,8 +95,8 @@ struct shd_ctx *shd_create(const char *blob_name, const char *shd_root,
 	SHD_HOOK(HOOK_SECTION_CREATED_LOCK_TAKEN);
 	SHD_HOOK(HOOK_SECTION_CREATED_BEFORE_TRUNCATE);
 
-	/* Resize the memory section accordingly */
-	if (shd_section_resize(&id, shd_section_get_total_size(hdr_info)) < 0) {
+	/* Resize the memory section if required by backend */
+	if (shd_section_resize(&id) < 0) {
 		ULOGE("Could not resize shared memory section \"%s\": %s",
 				blob_name,
 				strerror(errno));
@@ -111,7 +106,7 @@ struct shd_ctx *shd_create(const char *blob_name, const char *shd_root,
 	/* Create associated context */
 	ctx = shd_ctx_new(&id, blob_name);
 
-	ret = shd_ctx_mmap(ctx, hdr_info, SHD_MAP_PROT_READ_WRITE);
+	ret = shd_ctx_mmap(ctx, hdr_info);
 	if (ret < 0) {
 		ULOGE("Could not RW-map the shared memory section \"%s\" : %s",
 				blob_name,
@@ -182,7 +177,7 @@ struct shd_ctx *shd_open(const char *blob_name, const char *shd_root,
 
 	SHD_HOOK(HOOK_SECTION_OPEN_START);
 
-	ret = shd_section_get(blob_name, shd_root, &id);
+	ret = shd_section_open(blob_name, &id);
 	if (ret < 0) {
 		if (ret == -ENOENT)
 			ULOGD("Could not get shared memory section "
@@ -202,7 +197,7 @@ struct shd_ctx *shd_open(const char *blob_name, const char *shd_root,
 	if (*rev == NULL)
 		goto error;
 
-	ret = shd_ctx_mmap(ctx, NULL, SHD_MAP_PROT_READ);
+	ret = shd_ctx_mmap(ctx, NULL);
 	if (ret < 0) {
 		ULOGE("Could not RO-map the shared memory section \"%s\" : %s",
 				blob_name,

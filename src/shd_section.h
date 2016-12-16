@@ -52,38 +52,34 @@ extern "C" {
 
 struct shd_hdr;
 
-/* Type of shared memory section */
-enum shd_section_type {
-	SHD_SECTION_DEV_SHM,
-	SHD_SECTION_DEV_MEM,
-};
-
-enum shd_section_operation {
-	SHD_OPERATION_CREATE,
-	SHD_OPERATION_OPEN_WR,
-	SHD_OPERATION_OPEN_RD
-};
-
-enum shd_map_prot {
-	SHD_MAP_PROT_READ = (1 << 0),
-	SHD_MAP_PROT_WRITE = (1 << 1),
-	SHD_MAP_PROT_READ_WRITE = SHD_MAP_PROT_READ | SHD_MAP_PROT_WRITE
-};
-
 struct shd_section_addr {
 	void *ptr;
 	size_t size;
 };
 
 struct shd_section_backend {
-	/* Section type */
-	enum shd_section_type type;
-
 	/**
-	 * @brief Create/open a section
+	 * @brief Create a section
 	 *
 	 * @param[in] blob_name : name of the blob to add to the directory
-	 * @param[in] op : description of the operation do to (create/open/...)
+	 * @param[in] size : the size of the section to create
+	 * @param[in] param : backend-specific configuration parameter
+	 * @param[out] priv : backend instance
+	 * @param[out] first_creation : true if the section didn't exist
+	 *
+	 * @return 0 in case of success, else a negative errno
+	 *
+	 */
+	int (*create) (const char *blob_name,
+			size_t size,
+			const void *param,
+			void **priv,
+			bool *first_creation);
+
+	/**
+	 * @brief Open a section
+	 *
+	 * @param[in] blob_name : name of the blob to add to the directory
 	 * @param[in] param : backend-specific configuration parameter
 	 * @param[out] priv : backend instance
 	 *
@@ -91,7 +87,6 @@ struct shd_section_backend {
 	 *
 	 */
 	int (*open) (const char *blob_name,
-			enum shd_section_operation op,
 			const void *param,
 			void **priv);
 
@@ -117,23 +112,24 @@ struct shd_section_backend {
 	 * @brief Get the start of a section
 	 *
 	 * @param[in] size : the expected section size
-	 * @param[in] prot : expected protection flags
 	 * @param[out] out_ptr : pointer to the start of the section
 	 * @param[in] priv : backend instance
 	 *
 	 * @return 0 in case of success, else a negative errno
 	 */
-	int (*get_section_start) (size_t size, enum shd_map_prot prot,
+	int (*get_section_start) (size_t size,
 				void **out_ptr, void *priv);
 
 	/**
 	 * @brief Resize a section
 	 *
+	 * This function should use the "size" parameter given in create()
+	 *
 	 * @param[in] priv : backend instance
 	 *
 	 * @return 0 in case of success, else a negative errno
 	 */
-	int (*section_resize) (size_t size, void *priv);
+	int (*section_resize) (void *priv);
 
 	/**
 	 * @brief Lock a section
@@ -189,9 +185,7 @@ struct shd_section {
  * @brief Attempt to create a new shared memory section for a blob
  *
  * @param[in] blob_name : name of the blob to add to the directory
- * @param[in] shd_root: root directory where shared memory section is located.
- * If NULL, defaults to /dev/shm. Can also be set to any other valid directory
- * or /dev/mem if the shared memory is not in the file system
+ * @param[in] size : size of the section to create
  *
  * @return : 0 in case of success,
  *           -ENAMETOOLONG if blob_name exceeds max length
@@ -199,37 +193,20 @@ struct shd_section {
  *           -EEXIST if a memory section has already been created for this blob,
  *           other negative errno in case of error in "fcntl"
  */
-int shd_section_new(const char *blob_name, const char *shd_root,
-			struct shd_section_id *id);
+int shd_section_create(const char *blob_name, size_t size,
+			struct shd_section_id *id, bool *first_creation);
 
 /*
  * @brief Open a possibly already existing shared memory section for a blob
  *
  * @param[in] blob_name : name of the blob to add to the directory
- * @param[in] shd_root: root directory where shared memory section is located.
- * If NULL, defaults to /dev/shm. Can also be set to any other valid directory
- * or /dev/mem if the shared memory is not in the file system
  *
  * @return : 0 in case of success,
  *           -ENAMETOOLONG if blob_name exceeds max length
  *           -EINVAL if blob_name contains a "/",
  *           other negative errno in case of error in "fcntl"
  */
-int shd_section_open(const char *blob_name, const char *shd_root,
-			struct shd_section_id *id);
-
-/*
- * @brief Get file descriptor to shared memory section for a blob
- *
- * @param[in] blob_name : name of the blob to look for
- * @param[in] shd_root: root directory where shared memory section is located.
- * If NULL, defaults to /dev/shm. Can also be set to any other valid directory
- * or /dev/mem if the shared memory is not in the file system
- *
- * @return : 0 in case of success,
- *           negative errno in case of error
- */
-int shd_section_get(const char *blob_name, const char *shd_root,
+int shd_section_open(const char *blob_name,
 			struct shd_section_id *id);
 
 /*
@@ -256,11 +233,10 @@ int shd_section_unlock(const struct shd_section_id *id);
  * @brief Resize a given memory section
  *
  * @param[in] id : id of the section to unlock
- * @param[in] size : target size for the section
  *
  * @return : 0 in case of success,
  */
-int shd_section_resize(const struct shd_section_id *id, size_t size);
+int shd_section_resize(const struct shd_section_id *id);
 
 /*
  * @brief Free a given memory section
@@ -285,14 +261,12 @@ int shd_section_free(const struct shd_section_id *id);
  * @param[in] id : identifier for the open shared memory section
  * @param[in] hdr_info : header info for that memory section (NULL if this
  * information is not available from caller's private memory)
- * @param[in] prot : memory protection that should be used for those pointers
  *
  * @return : pointer to the mapping,
  *           NULL in case of error
  */
 struct shd_section *shd_section_mapping_new(const struct shd_section_id *id,
-			const struct shd_hdr_user_info *hdr_info,
-			enum shd_map_prot prot);
+			const struct shd_hdr_user_info *hdr_info);
 
 /*
  * @brief Destroy a memory section mapping
