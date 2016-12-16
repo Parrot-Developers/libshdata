@@ -154,6 +154,11 @@ struct shd_section_backend {
 	int (*section_unlock) (void *priv);
 };
 
+struct shd_section_properties {
+	const struct shd_section_backend *backend;
+	const void *backend_param;
+};
+
 struct shd_section_id {
 	struct shd_section_backend backend;
 	void *instance;
@@ -304,6 +309,22 @@ int shd_section_mapping_destroy(struct shd_section *map);
  *           -1 in case of error
  */
 size_t shd_section_get_total_size(const struct shd_hdr_user_info *hdr_info);
+
+/**
+ * @brief Find a section from its name
+ *
+ * The implementation of the function is provided by the running platform.
+ * A default implementation is available for tests purposes. This implementation
+ * always indicate to use /dev/shm backend.
+ *
+ * @param[in] blob_name : name of the blob to look for
+ * @param[out] properties : the properties of the section
+ *
+ * @return : 0 if the section has been found
+ *           -ENOENT if the section is unknown
+ */
+int shd_section_lookup(const char *blob_name,
+			struct shd_section_properties *properties);
 
 #ifdef __cplusplus
 }

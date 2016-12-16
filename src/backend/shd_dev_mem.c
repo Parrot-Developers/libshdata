@@ -39,11 +39,11 @@
 #include "shd_hdr.h"
 #include "shd_section.h"
 #include "shd_private.h"
-#include "dev_mem_lookup.h"
+#include "backend/shd_dev_mem.h"
 
 struct shd_dev_mem_priv {
 	int fd;
-	intptr_t offset;
+	uintptr_t offset;
 	struct shd_section_addr addr;
 };
 
@@ -78,10 +78,11 @@ static int get_open_flags(enum shd_section_operation op)
 
 static int shd_dev_mem_open(const char *blob_name,
 			enum shd_section_operation op,
-			const void *param,
+			const void *raw_param,
 			void **priv)
 {
 	struct shd_dev_mem_priv *self;
+	const struct shd_dev_mem_backend_param *param = raw_param;
 	int flags = get_open_flags(op);
 	int ret;
 
@@ -100,12 +101,7 @@ static int shd_dev_mem_open(const char *blob_name,
 	if (ret < 0)
 		goto close_fd;
 
-	ret = dev_mem_lookup(blob_name, &self->offset);
-	if (ret < 0) {
-		ULOGW("Lookup for blob \"%s\" ended with error : %s",
-				blob_name, strerror(-ret));
-		goto close_fd;
-	}
+	self->offset = param->offset;
 
 	*priv = self;
 

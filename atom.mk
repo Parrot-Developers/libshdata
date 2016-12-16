@@ -51,8 +51,8 @@ include $(CLEAR_VARS)
 LOCAL_MODULE := libshdata-dev-mem-lookup
 LOCAL_CATEGORY_PATH := libs
 LOCAL_DESCRIPTION := Dummy lookup table for /dev/mem
-LOCAL_SRC_FILES := src/lookup/dev_mem_lookup_dummy.c
-LOCAL_C_INCLUDES := $(LOCAL_PATH)/include
+LOCAL_SRC_FILES := src/lookup/shd_lookup_dummy.c
+LOCAL_C_INCLUDES := $(LOCAL_PATH)/include $(LOCAL_PATH)/src
 include $(BUILD_STATIC_LIBRARY)
 
 endif
@@ -93,7 +93,7 @@ LOCAL_MODULE := libshdata-dev-mem-lookup-tst
 LOCAL_CATEGORY_PATH := libs
 LOCAL_DESCRIPTION := Unit test version of lookup table for /dev/mem
 LOCAL_SRC_FILES := tests/lookup/dev_mem_lookup.c
-LOCAL_C_INCLUDES := $(LOCAL_PATH)/include
+LOCAL_C_INCLUDES := $(LOCAL_PATH)/include $(LOCAL_PATH)/src
 include $(BUILD_STATIC_LIBRARY)
 
 include $(CLEAR_VARS)

@@ -48,8 +48,6 @@
 #include "backend/shd_shm.h"
 #include "backend/shd_dev_mem.h"
 
-#include "dev_mem_lookup.h"
-
 #define SHD_SECTION_MODE		0666
 
 struct shd_section_mapping {
@@ -102,24 +100,22 @@ static int from_blob_to_section(const char *blob_name,
 				struct shd_section_id *id,
 				enum shd_section_operation op)
 {
-	struct shd_shm_backend_param shm_param;
-	void *open_param = NULL;
+	struct shd_section_properties properties;
+	int ret;
 
 	if (blob_name == NULL || strchr(blob_name, '/') != NULL)
 		return -EINVAL;
 
-	/* Find backend */
-	if (shd_root == NULL) {
-		id->backend = shd_shm_backend;
-	} else if (!strncmp(shd_root, "/dev/mem", PATH_MAX)) {
-		id->backend = shd_dev_mem_backend;
-	} else {
-		id->backend = shd_shm_backend;
-		shm_param.root = shd_root;
-		open_param = &shm_param;
+	ret = shd_section_lookup(blob_name, &properties);
+	if (ret < 0) {
+		ULOGE("blob '%s' not found", blob_name);
+		return -ENOENT;
 	}
 
-	return (*id->backend.open) (blob_name, op, open_param, &id->instance);
+	id->backend = *properties.backend;
+
+	return (*id->backend.open) (blob_name, op,
+			properties.backend_param, &id->instance);
 }
 
 int shd_section_new(const char *blob_name, const char *shd_root,

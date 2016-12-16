@@ -32,6 +32,12 @@
 #ifndef _SHD_DEV_MEM_H_
 #define _SHD_DEV_MEM_H_
 
+#include "shd_section.h"
+
+struct shd_dev_mem_backend_param {
+	uintptr_t offset;
+};
+
 extern const struct shd_section_backend shd_dev_mem_backend;
 
 #endif /* _SHD_DEV_MEM_H_ */

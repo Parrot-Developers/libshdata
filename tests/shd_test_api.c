@@ -159,7 +159,6 @@ static void test_api_override_shm_dir(void)
 	int ret;
 	struct shd_ctx *ctx1, *ctx2;
 	const char blob_name[] = BLOB_NAME("override");
-	const char shm_dir[] = "/tmp";
 	const char path[] = "/tmp/shd_" BLOB_NAME("override");
 	struct stat st;
 	struct shd_revision *rev;
@@ -168,13 +167,13 @@ static void test_api_override_shm_dir(void)
 	unlink(path);
 
 	/* Create and check it is in the correct directory */
-	ctx1 = shd_create(blob_name, shm_dir, &s_hdr_info, &s_metadata_hdr);
+	ctx1 = shd_create(blob_name, NULL, &s_hdr_info, &s_metadata_hdr);
 	CU_ASSERT_PTR_NOT_NULL(ctx1);
 	ret = stat(path, &st);
 	CU_ASSERT_EQUAL(ret, 0);
 
 	/* Open it */
-	ctx2 = shd_open(blob_name, shm_dir, &rev);
+	ctx2 = shd_open(blob_name, NULL, &rev);
 	CU_ASSERT_PTR_NOT_NULL(ctx2);
 
 	ret = shd_close(ctx1, rev);

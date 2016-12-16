@@ -36,7 +36,8 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <errno.h>
-#include <dev_mem_lookup.h>
+#include "backend/shd_shm.h"
+#include "backend/shd_dev_mem.h"
 
 #define BLOB_NAME_MAX_SIZE 255
 
@@ -70,12 +71,15 @@ static intptr_t vtop(uintptr_t vaddr)
 	return paddr;
 }
 
-int dev_mem_lookup(const char *blob_name, intptr_t *phys_addr)
+int shd_section_lookup(const char *blob_name,
+		struct shd_section_properties *properties)
 {
 	if (!strncmp(blob_name, "myBlob_open-close-dev-mem",
 				BLOB_NAME_MAX_SIZE)) {
+		/* Called from test_api_open_from_dev_mem() */
 		static bool first_call = true;
 		static void *base_ptr = NULL;
+		static struct shd_dev_mem_backend_param backend_param;
 
 		if (first_call) {
 			/* Allocate a given memory space of which we
@@ -94,9 +98,26 @@ int dev_mem_lookup(const char *blob_name, intptr_t *phys_addr)
 		volatile int dummy = *(int *) base_ptr;
 		dummy++;
 
-		*phys_addr = vtop((uintptr_t) base_ptr);
+		backend_param.offset = vtop((uintptr_t) base_ptr);
+
+		properties->backend = &shd_dev_mem_backend;
+		properties->backend_param = &backend_param;
+
+		return 0;
+	} else if (!strncmp(blob_name, "myBlob_override", BLOB_NAME_MAX_SIZE)) {
+		/* Called from test_api_override_shm_dir() */
+		static const struct shd_shm_backend_param backend_param = {
+			.root = "/tmp/"
+		};
+
+		properties->backend = &shd_shm_backend;
+		properties->backend_param = &backend_param;
+
 		return 0;
 	} else {
-		return -ENOENT;
+		properties->backend = &shd_shm_backend;
+		properties->backend_param = NULL;
+
+		return 0;
 	}
 }

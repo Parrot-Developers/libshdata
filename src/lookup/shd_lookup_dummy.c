@@ -23,26 +23,23 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- * @file dev_mem_lookup.h
+ * @file shd_lookup_dummy.c
  *
- * @brief Header file for dev-mem lookup feature
+ * @brief Dev-mem lookup table for dummy target
  *
  */
-
-#ifndef SHD_TEST_LOOKUP_H_
-#define SHD_TEST_LOOKUP_H_
 
 #include <stdint.h>
+#include <string.h>
+#include <errno.h>
+#include "shd_section.h"
+#include "backend/shd_shm.h"
 
-/*
- * @brief Get the physical address of a given blob
- *
- * @param[in] blob_name : name of the blob to look-up
- * @param[out] phys_addr : physical address of the blob
- *
- * @return 0 if a match was found
- *         -ENOMEM if no match was found
- */
-int dev_mem_lookup(const char *blob_name, intptr_t *phys_addr);
+int shd_section_lookup(const char *blob_name,
+			struct shd_section_properties *properties)
+{
+	properties->backend = &shd_shm_backend;
+	properties->backend_param = NULL;
 
-#endif /* SHD_TEST_LOOKUP_H_ */
+	return 0;
+}

@@ -43,7 +43,7 @@
 #include "shd_hdr.h"
 #include "shd_section.h"
 #include "shd_private.h"
-#include "shd_shm.h"
+#include "backend/shd_shm.h"
 
 #define SHD_SECTION_PREFIX		"/shd_"
 
