@@ -31,7 +31,6 @@
 
 #include <errno.h>
 #include <string.h>		/* for memcpy function */
-#include <sys/mman.h>		/* For shm and PROT flags */
 #include <stdlib.h>		/* For memory allocation functions */
 #include <sys/types.h>
 #include <unistd.h>		/* For lseek */
@@ -69,71 +68,29 @@ int shd_hdr_read(const struct shd_section_id *id, void *hdr_start,
 			struct shd_hdr_user_info *hdr_user)
 {
 	int ret;
-	struct shd_hdr *hdr = NULL;
-	uint32_t lib_version_maj;
-	uint64_t magic_number;
 
-	if (hdr_user == NULL ||
-			((id->type == SHD_SECTION_DEV_SHM ||
-				id->type == SHD_SECTION_SHM_OTHER) &&
-				id->id.shm_fd < 0 && hdr_start == NULL)) {
+	if (hdr_user == NULL) {
 		ret = -EINVAL;
 		goto exit;
 	}
 
 	if (hdr_start != NULL) {
-		hdr = hdr_start;
+		struct shd_hdr *hdr = hdr_start;
+
 		memcpy(hdr_user, &hdr->user_info, sizeof(*hdr_user));
 	} else {
-		switch (id->type) {
-		case SHD_SECTION_DEV_SHM:
-		case SHD_SECTION_SHM_OTHER:
-			/* If the producer has just created the shared memory
-			 * section file descriptor, and has not yet truncated
-			 * it to its proper size, the m'map will succeed but
-			 * eventually a SIGBUS will be triggered when trying to
-			 * access to the mapped zone. To avoid this, we check
-			 * whether the file size is larger than zero, and abort
-			 * if it's not. */
-			if (lseek(id->id.shm_fd, 0, SEEK_END) <= 0) {
-				ULOGW("Can not m'map in zero-sized file");
-				ret = -ENOMEM;
-				goto exit;
-			}
+		struct shd_hdr hdr;
 
-			hdr = mmap(0, sizeof(*hdr), PROT_READ, MAP_SHARED,
-					id->id.shm_fd, 0);
-
-			if (hdr == MAP_FAILED) {
-				ret = -ENOMEM;
-				goto exit;
-			}
-			break;
-		case SHD_SECTION_DEV_MEM:
-			hdr = mmap(0, sizeof(*hdr), PROT_READ, MAP_SHARED,
-					id->id.dev_mem.fd,
-					id->id.dev_mem.offset);
-
-			if (hdr == MAP_FAILED) {
-				ret = -ENOMEM;
-				goto exit;
-			}
-			break;
-		default:
-			break;
-		}
+		ret = (*id->backend.hdr_read) (&hdr, id->instance);
 
 		/* Copy the header and library version into user own memory in
 		 * all cases, then unmap the shared memory region */
-		memcpy(hdr_user, &hdr->user_info, sizeof(*hdr_user));
-		lib_version_maj = hdr->lib_version_maj;
-		magic_number = hdr->magic_number;
-		munmap(hdr, sizeof(*hdr));
+		memcpy(hdr_user, &hdr.user_info, sizeof(*hdr_user));
 
 		/* Check whether the section that was read and is supposed to
 		 * be a shared memory section is a shared memory section indeed.
 		 * This case can arise e.g. when reading from /dev/mem */
-		if (magic_number != SHD_MAGIC_NUMBER) {
+		if (hdr.magic_number != SHD_MAGIC_NUMBER) {
 			ULOGE("Mapped memory section is not a shared memory "
 					"section");
 			ret = -EFAULT;
@@ -146,7 +103,7 @@ int shd_hdr_read(const struct shd_section_id *id, void *hdr_start,
 		 * and the code to remove the mapping from memory is kept
 		 * common.
 		 */
-		if (lib_version_maj != SHD_VERSION_MAJOR) {
+		if (hdr.lib_version_maj != SHD_VERSION_MAJOR) {
 			ULOGE("Trying to read a section created with another "
 				"version of the library : update your "
 				"software !");

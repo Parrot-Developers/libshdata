@@ -35,7 +35,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
-#include <sys/mman.h>		/* For prot constants */
 
 #define SHD_ADVANCED_WRITE_API
 #define SHD_ADVANCED_READ_API
@@ -112,7 +111,7 @@ struct shd_ctx *shd_create(const char *blob_name, const char *shd_root,
 	/* Create associated context */
 	ctx = shd_ctx_new(&id, blob_name);
 
-	ret = shd_ctx_mmap(ctx, hdr_info, PROT_READ | PROT_WRITE);
+	ret = shd_ctx_mmap(ctx, hdr_info, SHD_MAP_PROT_READ_WRITE);
 	if (ret < 0) {
 		ULOGE("Could not RW-map the shared memory section \"%s\" : %s",
 				blob_name,
@@ -203,7 +202,7 @@ struct shd_ctx *shd_open(const char *blob_name, const char *shd_root,
 	if (*rev == NULL)
 		goto error;
 
-	ret = shd_ctx_mmap(ctx, NULL, PROT_READ);
+	ret = shd_ctx_mmap(ctx, NULL, SHD_MAP_PROT_READ);
 	if (ret < 0) {
 		ULOGE("Could not RO-map the shared memory section \"%s\" : %s",
 				blob_name,

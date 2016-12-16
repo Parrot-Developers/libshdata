@@ -31,22 +31,22 @@
 
 #define _GNU_SOURCE
 #include <errno.h>			/* For error codes */
-#include <sys/mman.h>		/* For shm and PROT flags */
 #include <sys/stat.h>		/* For mode constants */
 #include <fcntl.h>		/* For O_* constants */
 #include <string.h>		/* String operations */
 #include <stddef.h>		/* NULL pointer */
 #include <stdlib.h>		/* For memory allocation functions */
-#include <limits.h>		/* For NAME_MAX macro */
-#include <sys/mman.h>		/* For mmap */
 #include <sys/file.h>		/* for flock */
 #include <unistd.h>		/* For ftruncate */
-#include <futils/fdutils.h>
 #include "shd_private.h"
 #include "shd_section.h"
 #include "shd_hdr.h"
 #include "shd_data.h"
 #include "shd_utils.h"
+
+/* backends */
+#include "backend/shd_shm.h"
+#include "backend/shd_dev_mem.h"
 
 #include "dev_mem_lookup.h"
 
@@ -62,11 +62,7 @@ struct shd_section_mapping {
 	ptrdiff_t sync_offset;
 };
 
-enum shd_section_operation {
-	SHD_OPERATION_CREATE,
-	SHD_OPERATION_OPEN_WR,
-	SHD_OPERATION_OPEN_RD
-};
+static int check_blob_name(const char *blob_name);
 
 static void get_offsets(const struct shd_hdr_user_info *hdr_info,
 			struct shd_section_mapping *offsets)
@@ -101,146 +97,29 @@ static struct shd_section *get_mmap(char *ptr,
 	return map;
 }
 
-static int check_blob_name(const char *blob_name)
-{
-	if (blob_name == NULL || strchr(blob_name, '/') != NULL)
-		return -EINVAL;
-	if (strlen(blob_name) >= SHD_SECTION_BLOB_NAME_MAX_LEN)
-		return -ENAMETOOLONG;
-	return 0;
-}
-
-static int get_open_flags(enum shd_section_operation op)
-{
-	switch (op) {
-	case SHD_OPERATION_CREATE:
-		return O_CREAT | O_EXCL | O_RDWR;
-	case SHD_OPERATION_OPEN_RD:
-		return O_RDONLY;
-	case SHD_OPERATION_OPEN_WR:
-		return O_CREAT | O_RDWR;
-	default:
-		return -EINVAL;
-	}
-}
-
-static int from_blob_to_section_shm_dev(const char *blob_name,
-					const char *shd_root,
-					struct shd_section_id *id,
-					enum shd_section_operation op)
-{
-	char *shm_name = NULL;
-	int mode = SHD_SECTION_MODE;
-	int flags = get_open_flags(op);
-
-	/* Build shm section name */
-	int ret = asprintf(&shm_name, "%s%s",
-				SHD_SECTION_PREFIX, blob_name);
-	if (ret < 0)
-		return -ENOMEM;
-
-	id->type = SHD_SECTION_DEV_SHM;
-
-	/* Create a new shm memory using shm_open */
-	id->id.shm_fd = shm_open(shm_name, flags, mode);
-	if (id->id.shm_fd == -1) {
-		free(shm_name);
-		return -errno;
-	}
-
-	free(shm_name);
-	return 0;
-}
-
-static int from_blob_to_section_shm_other(const char *blob_name,
-						const char *shd_root,
-						struct shd_section_id *id,
-						enum shd_section_operation op)
-{
-	char *file_path = NULL;
-	int mode = SHD_SECTION_MODE;
-	int flags = get_open_flags(op);
-
-	/* Build file path from root dir path and blob name */
-	int ret = asprintf(&file_path, "%s%s%s",
-				shd_root, SHD_SECTION_PREFIX, blob_name);
-	if (ret < 0)
-		return -ENOMEM;
-
-	id->type = SHD_SECTION_SHM_OTHER;
-
-	/* Create a new shm memory object using a simple "open" */
-	id->id.shm_fd = open(file_path, flags, mode);
-	if (id->id.shm_fd == -1) {
-		ret = -errno;
-		goto exit;
-	}
-
-	ret = fd_set_close_on_exec(id->id.shm_fd);
-	if (ret < 0)
-		close(id->id.shm_fd);
-
-exit:
-	free(file_path);
-	return ret;
-}
-
-static int from_blob_to_section_dev_mem(const char *blob_name,
-					const char *shd_root,
-					struct shd_section_id *id,
-					enum shd_section_operation op)
-{
-	int mode = SHD_SECTION_MODE;
-	int flags = get_open_flags(op);
-	int ret;
-
-	id->type = SHD_SECTION_DEV_MEM;
-
-	/* Open the base "/dev/mem" */
-	id->id.dev_mem.fd = open(shd_root, flags, mode);
-	if (id->id.shm_fd == -1) {
-		ret = -errno;
-		goto error_no_close;
-	}
-
-	ret = fd_set_close_on_exec(id->id.shm_fd);
-	if (ret < 0)
-		goto error_close;
-
-	ret = dev_mem_lookup(blob_name, &id->id.dev_mem.offset);
-	if (ret < 0) {
-		ULOGW("Lookup for blob \"%s\" ended with error : %s",
-				blob_name, strerror(-ret));
-		goto error_close;
-	}
-
-	return 0;
-
-error_close:
-	close(id->id.dev_mem.fd);
-error_no_close:
-	return ret;
-}
-
 static int from_blob_to_section(const char *blob_name,
 				const char *shd_root,
 				struct shd_section_id *id,
 				enum shd_section_operation op)
 {
-	/* Test input string for validity */
-	int check = check_blob_name(blob_name);
-	if (check < 0)
-		return check;
+	struct shd_shm_backend_param shm_param;
+	void *open_param = NULL;
 
-	if (shd_root == NULL)
-		return from_blob_to_section_shm_dev(blob_name, shd_root,
-							id, op);
-	else if (!strncmp(shd_root, "/dev/mem", PATH_MAX))
-		return from_blob_to_section_dev_mem(blob_name, shd_root,
-							id, op);
-	else
-		return from_blob_to_section_shm_other(blob_name, shd_root,
-							id, op);
+	if (blob_name == NULL || strchr(blob_name, '/') != NULL)
+		return -EINVAL;
+
+	/* Find backend */
+	if (shd_root == NULL) {
+		id->backend = shd_shm_backend;
+	} else if (!strncmp(shd_root, "/dev/mem", PATH_MAX)) {
+		id->backend = shd_dev_mem_backend;
+	} else {
+		id->backend = shd_shm_backend;
+		shm_param.root = shd_root;
+		open_param = &shm_param;
+	}
+
+	return (*id->backend.open) (blob_name, op, open_param, &id->instance);
 }
 
 int shd_section_new(const char *blob_name, const char *shd_root,
@@ -266,91 +145,27 @@ int shd_section_get(const char *blob_name, const char *shd_root,
 
 int shd_section_lock(const struct shd_section_id *id)
 {
-	int ret = -1;
-
-	switch (id->type) {
-	case SHD_SECTION_DEV_SHM:
-	case SHD_SECTION_SHM_OTHER:
-		ret = flock(id->id.shm_fd, LOCK_EX | LOCK_NB);
-		break;
-	case SHD_SECTION_DEV_MEM:
-		ret = 0;
-		break;
-	default:
-		break;
-	}
-
-	if (ret < 0)
-		return -errno;
-	else
-		return 0;
+	return (*id->backend.section_lock) (id->instance);
 }
 
 int shd_section_unlock(const struct shd_section_id *id)
 {
-	int ret = -1;
-
-	switch (id->type) {
-	case SHD_SECTION_DEV_SHM:
-	case SHD_SECTION_SHM_OTHER:
-		ret = flock(id->id.shm_fd, LOCK_UN);
-		break;
-	case SHD_SECTION_DEV_MEM:
-		ret = 0;
-		break;
-	default:
-		break;
-	}
-
-	if (ret < 0)
-		return -errno;
-	else
-		return 0;
+	return (*id->backend.section_unlock) (id->instance);
 }
 
 int shd_section_resize(const struct shd_section_id *id, size_t size)
 {
-	int ret = -1;
-
-	switch (id->type) {
-	case SHD_SECTION_DEV_SHM:
-	case SHD_SECTION_SHM_OTHER:
-		/* @todo The size we get from the function should certainly be
-		 * compared against PAGE_SIZE, which is the minimum size of a
-		 * shared memory it seems */
-		ret = ftruncate(id->id.shm_fd, size);
-		break;
-	case SHD_SECTION_DEV_MEM:
-		ret = 0;
-		break;
-	default:
-		break;
-	}
-
-	if (ret < 0)
-		return -errno;
-	else
-		return 0;
+	return (*id->backend.section_resize) (size, id->instance);
 }
 
 int shd_section_free(const struct shd_section_id *id)
 {
-	switch (id->type) {
-	case SHD_SECTION_DEV_SHM:
-	case SHD_SECTION_SHM_OTHER:
-		close(id->id.shm_fd);
-		break;
-	default:
-		close(id->id.dev_mem.fd);
-		break;
-	}
-
-	return 0;
+	return (*id->backend.close) (id->instance);
 }
 
 struct shd_section *shd_section_mapping_new(const struct shd_section_id *id,
 			const struct shd_hdr_user_info *hdr_info,
-			int prot)
+			enum shd_map_prot prot)
 {
 	struct shd_section *map = NULL;
 	struct shd_hdr_user_info src_hdr_user;
@@ -370,41 +185,14 @@ struct shd_section *shd_section_mapping_new(const struct shd_section_id *id,
 
 	get_offsets(&src_hdr_user, &offsets);
 
-	switch (id->type) {
-	case SHD_SECTION_DEV_SHM:
-	case SHD_SECTION_SHM_OTHER:
-		ptr = mmap(0, offsets.total_size,
-					prot,
-					MAP_SHARED,
-					id->id.shm_fd,
-					0);
-
-		if (ptr == MAP_FAILED) {
-			ULOGW("Could not allocate memory : %s",
-					strerror(errno));
-			goto error;
-		}
-
-		map = get_mmap(ptr, &offsets);
-		break;
-	case SHD_SECTION_DEV_MEM:
-		ptr = mmap(0, offsets.total_size,
-					prot,
-					MAP_SHARED,
-					id->id.dev_mem.fd,
-					id->id.dev_mem.offset);
-
-		if (ptr == MAP_FAILED) {
-			ULOGW("Could not allocate memory : %s",
-					strerror(errno));
-			goto error;
-		}
-
-		map = get_mmap(ptr, &offsets);
-		break;
-	default:
-		break;
+	ret = (*id->backend.get_section_start) (offsets.total_size,
+						prot, &ptr, id->instance);
+	if (ret < 0) {
+		ULOGW("Could not allocate memory : %s", strerror(-ret));
+		return NULL;
 	}
+
+	map = get_mmap(ptr, &offsets);
 
 	return map;
 
@@ -414,10 +202,8 @@ error:
 
 int shd_section_mapping_destroy(struct shd_section *map)
 {
-	if (map) {
-		munmap(map->section_top, map->total_size);
-		free(map);
-	}
+	free(map);
+
 	return 0;
 }
 

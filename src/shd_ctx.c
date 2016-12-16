@@ -32,7 +32,6 @@
 #include <errno.h>		/* For error codes */
 #include <stddef.h>		/* For NULL pointer */
 #include <stdlib.h>		/* For memory allocation functions */
-#include <sys/mman.h>		/* For mmap */
 #include <string.h>		/* for strerror */
 #include <unistd.h>		/* for close */
 
@@ -55,7 +54,7 @@ struct shd_ctx *shd_ctx_new(struct shd_section_id *id, const char *blob_name)
 
 	ctx->blob_name = strdup(blob_name);
 	ctx->id = *id;
-	ctx->sync_ctx = shd_sync_ctx_new(id->type);
+	ctx->sync_ctx = shd_sync_ctx_new(id->backend.type);
 	if (ctx->sync_ctx == NULL)
 		goto error;
 
@@ -92,7 +91,7 @@ error:
 
 int shd_ctx_mmap(struct shd_ctx *ctx,
 			const struct shd_hdr_user_info *hdr_info,
-			int prot)
+			enum shd_map_prot prot)
 {
 	if (ctx == NULL)
 		return -EINVAL;

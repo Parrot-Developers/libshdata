@@ -14,7 +14,9 @@ LOCAL_SRC_FILES := src/shd.c \
 	src/shd_sync.c \
 	src/shd_sample.c \
 	src/shd_window.c \
-	src/shd_search.c
+	src/shd_search.c \
+	src/backend/shd_dev_mem.c \
+	src/backend/shd_shm.c
 LOCAL_CFLAGS += -DBUILD_TARGET_CPU=$(TARGET_CPU)
 
 ifeq ($(TARGET_CPU),$(filter %$(TARGET_CPU),tegrax1 tegrak1))
@@ -23,7 +25,8 @@ else
 LOCAL_CFLAGS += -DBUILD_USE_ALTERNATIVE_X1_BPMP_PRIMITIVES_FOR_DEV_MEM=0
 endif
 
-LOCAL_C_INCLUDES := $(LOCAL_PATH)/include
+LOCAL_C_INCLUDES := $(LOCAL_PATH)/include \
+	$(LOCAL_PATH)/src
 LOCAL_LIBRARIES := libfutils
 LOCAL_CONDITIONAL_LIBRARIES := OPTIONAL:libulog \
 				OPTIONAL:libshdata-concurrency-hooks-implem

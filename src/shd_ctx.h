@@ -86,7 +86,7 @@ struct shd_ctx *shd_ctx_new(struct shd_section_id *id, const char *blob_name);
  */
 int shd_ctx_mmap(struct shd_ctx *ctx,
 			const struct shd_hdr_user_info *hdr_info,
-			int prot);
+			enum shd_map_prot prot);
 
 /*
  * @brief Destroys a shared memory context

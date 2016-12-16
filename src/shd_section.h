@@ -49,34 +49,114 @@ extern "C" {
 #include <inttypes.h>
 #include "libshdata.h"
 
-#define SHD_SECTION_PREFIX		"/shd_"
-/* -1 for final null of prefix string */
-#define SHD_SECTION_PREFIX_LEN		(sizeof(SHD_SECTION_PREFIX) - 1)
-
-#define SHD_SECTION_BLOB_NAME_MAX_LEN	(NAME_MAX - SHD_SECTION_PREFIX_LEN)
+struct shd_hdr;
 
 /* Type of shared memory section */
 enum shd_section_type {
 	SHD_SECTION_DEV_SHM,
-	SHD_SECTION_SHM_OTHER,
 	SHD_SECTION_DEV_MEM,
 };
 
-/* Shared memory section identifier : depends on the type of memory section */
-struct shd_section_id {
-	enum shd_section_type type;
-	union {
-		/* "Usual" shared memory : section was open either by shm_open
-		 * or a plain "open" on a given file */
-		int shm_fd;
+enum shd_section_operation {
+	SHD_OPERATION_CREATE,
+	SHD_OPERATION_OPEN_WR,
+	SHD_OPERATION_OPEN_RD
+};
 
-		/* "/dev/mem" shared memory : we need an open file descriptor
-		 * on /dev/mem and an offset in the memory */
-		struct {
-			int fd;
-			intptr_t offset;
-		} dev_mem;
-	} id;
+enum shd_map_prot {
+	SHD_MAP_PROT_READ = (1 << 0),
+	SHD_MAP_PROT_WRITE = (1 << 1),
+	SHD_MAP_PROT_READ_WRITE = SHD_MAP_PROT_READ | SHD_MAP_PROT_WRITE
+};
+
+struct shd_section_addr {
+	void *ptr;
+	size_t size;
+};
+
+struct shd_section_backend {
+	/* Section type */
+	enum shd_section_type type;
+
+	/**
+	 * @brief Create/open a section
+	 *
+	 * @param[in] blob_name : name of the blob to add to the directory
+	 * @param[in] op : description of the operation do to (create/open/...)
+	 * @param[in] param : backend-specific configuration parameter
+	 * @param[out] priv : backend instance
+	 *
+	 * @return 0 in case of success, else a negative errno
+	 *
+	 */
+	int (*open) (const char *blob_name,
+			enum shd_section_operation op,
+			const void *param,
+			void **priv);
+
+	/**
+	 * @brief Close and clear a section
+	 *
+	 * @param[in] priv : backend instance
+	 * @return 0 in case of success, else a negative errno
+	 */
+	int (*close) (void *priv);
+
+	/**
+	 * @brief Read the header of a section
+	 *
+	 * @param[out] hdr : the header to fill
+	 * @param[in] priv : backend instance
+	 *
+	 * @return 0 in case of success, else a negative errno
+	 */
+	int (*hdr_read) (struct shd_hdr *hdr, void *priv);
+
+	/**
+	 * @brief Get the start of a section
+	 *
+	 * @param[in] size : the expected section size
+	 * @param[in] prot : expected protection flags
+	 * @param[out] out_ptr : pointer to the start of the section
+	 * @param[in] priv : backend instance
+	 *
+	 * @return 0 in case of success, else a negative errno
+	 */
+	int (*get_section_start) (size_t size, enum shd_map_prot prot,
+				void **out_ptr, void *priv);
+
+	/**
+	 * @brief Resize a section
+	 *
+	 * @param[in] priv : backend instance
+	 *
+	 * @return 0 in case of success, else a negative errno
+	 */
+	int (*section_resize) (size_t size, void *priv);
+
+	/**
+	 * @brief Lock a section
+	 *
+	 * @param[in] size : the new section size
+	 * @param[in] priv : backend instance
+	 *
+	 * @return 0 in case of success, else a negative errno
+	 */
+	int (*section_lock) (void *priv);
+
+	/**
+	 * @brief Unlock a section
+	 *
+	 * @param[in] priv : backend instance
+	 *
+	 * @return 0 in case of success, else a negative errno
+	 */
+	int (*section_unlock) (void *priv);
+};
+
+struct shd_section_id {
+	struct shd_section_backend backend;
+	void *instance;
 };
 
 struct shd_section {
@@ -197,14 +277,13 @@ int shd_section_free(const struct shd_section_id *id);
  * @param[in] hdr_info : header info for that memory section (NULL if this
  * information is not available from caller's private memory)
  * @param[in] prot : memory protection that should be used for those pointers
- * (PROT_READ or PROT_WRITE)
  *
  * @return : pointer to the mapping,
  *           NULL in case of error
  */
 struct shd_section *shd_section_mapping_new(const struct shd_section_id *id,
 			const struct shd_hdr_user_info *hdr_info,
-			int prot);
+			enum shd_map_prot prot);
 
 /*
  * @brief Destroy a memory section mapping
